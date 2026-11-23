@@ -386,13 +386,34 @@ foreach($r in $ffd){
   $formsLeads++; if($isq){ $formsQlf++ }
 }
 
+# ---- LEADS DA PAGINA "LISTA DE ESPERA APICE" (desde 13/11/2026) ----------------------
+# A planilha e FECHADA: quem le e o backend (qual-backend/Code.gs, ?a=espera), que devolve so codigo da lead
+# (mesmo hash da aba de qualificacao), dia, UTMs e faixa de faturamento. Sem dado pessoal aqui.
+# Entra no diario (funil), no grain (arvore/V2) e na atribuicao de venda (pelo codigo do e-mail do comprador).
+$QUAL_API_URL='https://script.google.com/macros/s/AKfycby_CCF9BctQJeblE6AcS9iF4iolGMkiTNlHQXl0hkiFFldHrZW61d1HKejstje-b3OyGQ/exec'
+$leadSha=[Security.Cryptography.SHA256]::Create(); $leadEnc=New-Object Text.UTF8Encoding($false)
+function LeadId($em){ return 'q'+[BitConverter]::ToString($script:leadSha.ComputeHash($script:leadEnc.GetBytes('ccn|'+$em)),0,6).Replace('-','').ToLower() }
+function IsQualEspera($f){ $t=Deaccent (Norm $f); if($t -eq ''){ return $false }; if($t -match '(?i)menos|abaixo|^ate\b'){ return $false }; return $true }   # faixas da pagina: R$ 200 mil a 300 mil para cima
+$esperaRows=@(); $esperaById=@{}; $esperaLeads=0; $esperaQlf=0
+try{ [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $esJ=Invoke-RestMethod -Uri "$QUAL_API_URL`?a=espera" -TimeoutSec 120; if($esJ.ok){ $esperaRows=@($esJ.rows) } else { Write-Host "::warning::ESPERA: backend respondeu sem ok" } }catch{ Write-Host "::warning::ESPERA: backend nao respondeu ($($_.Exception.Message))" }
+foreach($er in $esperaRows){ $esD=[string]$er.d; if($esD -notmatch '^\d{4}-\d{2}-\d{2}$'){continue}
+  $esC=CleanUtm ([string]$er.c); if($esC -eq ''){$esC='SEM_UTM'}; $esS=CleanUtm ([string]$er.s); if($esS -eq ''){$esS='SEM_UTM'}; $esA=AdCode (CleanUtm ([string]$er.a)); if($esA -eq ''){$esA='SEM_UTM'}
+  $esQ=IsQualEspera ([string]$er.f)
+  $o=GetDay $esD; $o.leads++; if($esQ){ $o.qlf++ }
+  $og=GetGrain $esD $esC $esS $esA; $og.leads++; if($esQ){ $og.qlf++ }
+  $esperaById[[string]$er.id]=[pscustomobject]@{campaign=$esC;adset=$esS;ad=$esA;bucket='Outros';date=$esD;fat=(Norm ([string]$er.f));q=$esQ}
+  $esperaLeads++; if($esQ){ $esperaQlf++ } }
+Write-Host ("ESPERA: {0} leads da lista de espera ({1} qualif)" -f $esperaLeads,$esperaQlf)
+function LeadDeEsperaPorEmail($em){ if($em -notmatch '@' -or $script:esperaById.Count -eq 0){ return $null }; $k=LeadId $em; if($script:esperaById.ContainsKey($k)){ return $script:esperaById[$k] }; return $null }
+
 # buyer objections per purchase day (only matched buyers have a known desafio)
 $objBuyers=@{}
 function GetObjB($d,$b){ $key="$d`u$b"; if(-not $objBuyers.ContainsKey($key)){ $objBuyers[$key]=[pscustomobject]@{date=$d;bucket=$b;buyers=0} }; return $objBuyers[$key] }
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $e=(Norm $r[$K_EMAIL]).ToLower(); $rev=MoneyKiwify $r[$K_REV]
   if($vendaExclE.ContainsKey($e)){continue}; $nk=NameKey $r[$K_NOME]; if($nk -match ' ' -and $vendaExclN.ContainsKey($nk)){continue}   # cancelado sai da arvore
-  if($e -ne '' -and $leadByEmail.ContainsKey($e)){ $m=$leadByEmail[$e]
+  $m=$null; if($e -ne '' -and $leadByEmail.ContainsKey($e)){ $m=$leadByEmail[$e] } else { $m=LeadDeEsperaPorEmail $e }   # lista de espera: casa pelo codigo do e-mail
+  if($m){
     $c=if($m.campaign){$m.campaign}else{'NAO_ATRIBUIDO'}; $s=if($m.adset){$m.adset}else{'NAO_ATRIBUIDO'}; $a=if($m.ad){$m.ad}else{'NAO_ATRIBUIDO'}
     $o=GetGrain $d $c $s $a
     $obk=GetObjB $d $m.bucket; $obk.buyers++ } else { $o=GetGrain $d 'NAO_ATRIBUIDO' 'NAO_ATRIBUIDO' 'NAO_ATRIBUIDO' }
@@ -400,7 +421,8 @@ foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K
 
 # vendas EXTRAS na arvore: atribui por e-mail se a compradora veio do trafego, senao NAO_ATRIBUIDO
 foreach($x in $extras){ $e=$x.email
-  if($leadByEmail.ContainsKey($e)){ $m=$leadByEmail[$e]
+  $m=$null; if($leadByEmail.ContainsKey($e)){ $m=$leadByEmail[$e] } else { $m=LeadDeEsperaPorEmail $e }
+  if($m){
     $c=if($m.campaign){$m.campaign}else{'NAO_ATRIBUIDO'}; $s=if($m.adset){$m.adset}else{'NAO_ATRIBUIDO'}; $a=if($m.ad){$m.ad}else{'NAO_ATRIBUIDO'}
     $o=GetGrain $x.date $c $s $a
     $obk=GetObjB $x.date $m.bucket; $obk.buyers++ } else { $o=GetGrain $x.date 'NAO_ATRIBUIDO' 'NAO_ATRIBUIDO' 'NAO_ATRIBUIDO' }
@@ -912,16 +934,18 @@ if($Mode -eq 'all' -or $Mode -eq 'qual'){
   $qlSets=New-Object System.Collections.Generic.List[string]; $qlSetsI=@{}; $qlAds=New-Object System.Collections.Generic.List[string]; $qlAdsI=@{}
   $qlFats=New-Object System.Collections.Generic.List[string]; $qlFatsI=@{}
   $qlBody=New-Object Text.StringBuilder; $qlTotal=0; $qlNoMail=0; $qlPerGrain=@{}
-  function QlAdd($em,$dd,$cc,$ss,$aa,$ff){
+  function QlAdd($em,$dd,$cc,$ss,$aa,$ff,$idPronto){
     $gk="$dd`u$cc`u$ss`u$aa"; if($script:qlPerGrain.ContainsKey($gk)){ $script:qlPerGrain[$gk]++ } else { $script:qlPerGrain[$gk]=1 }
-    if($em -notmatch '@'){ $script:qlNoMail++; return }
-    $line='["'+(QualId $em)+'",'+(QlIdx $script:qlDaysI $script:qlDays $dd)+','+(QlIdx $script:qlCampsI $script:qlCamps $cc)+','+(QlIdx $script:qlSetsI $script:qlSets $ss)+','+(QlIdx $script:qlAdsI $script:qlAds $aa)+','+(QlIdx $script:qlFatsI $script:qlFats $ff)+']'
+    if(-not $idPronto -and $em -notmatch '@'){ $script:qlNoMail++; return }
+    $qid=if($idPronto){ $idPronto } else { QualId $em }
+    $line='["'+$qid+'",'+(QlIdx $script:qlDaysI $script:qlDays $dd)+','+(QlIdx $script:qlCampsI $script:qlCamps $cc)+','+(QlIdx $script:qlSetsI $script:qlSets $ss)+','+(QlIdx $script:qlAdsI $script:qlAds $aa)+','+(QlIdx $script:qlFatsI $script:qlFats $ff)+']'
     if($script:qlTotal -gt 0){ [void]$script:qlBody.Append(',') }; [void]$script:qlBody.Append($line); $script:qlTotal++ }
   foreach($r in $ld){ $dq=Norm $r[$L_DATE]; if($dq -notmatch '^\d{4}-\d{2}-\d{2}$'){continue}; if(-not (IsQual $r[$L_FAT] $r[$L_VOCE])){continue}   # mesmas regras do loop do grain
     $cq=CleanUtm $r[$L_CAMP]; if($cq -eq ''){$cq='SEM_UTM'}; $sq=CleanUtm $r[$L_SET]; if($sq -eq ''){$sq='SEM_UTM'}; $aq=AdCode (CleanUtm $r[$L_CONT]); if($aq -eq ''){$aq='SEM_UTM'}
     QlAdd (Norm $r[$L_EMAIL]).ToLower() $dq $cq $sq $aq (Norm $r[$L_FAT]) }
   foreach($r in $ffd){ $cq=Norm $r[$FF_CAMP]; if($cq -eq '' -or -not (IsFormsCamp $cq)){continue}; $dq=''; $tq=Norm $r[$FF_DATE]; if($tq -match '(\d{4})-(\d{2})-(\d{2})'){ $dq=$Matches[0].Substring(0,10) }; if($dq -eq ''){continue}
     if(-not (IsQualForms $r[$FF_FAT] $r[$FF_VOCE])){continue}; QlAdd (Norm $r[$FF_EMAIL]).ToLower() $dq $cq (Norm $r[$FF_SET]) (AdCode $r[$FF_AD]) (Norm $r[$FF_FAT]) }
+  foreach($esK in $esperaById.Keys){ $esR=$esperaById[$esK]; if(-not $esR.q){continue}; QlAdd '' $esR.date $esR.campaign $esR.adset $esR.ad $esR.fat $esK }   # lista de espera (codigo ja vem pronto do backend)
   # conferencia: cada celula do grain tem que ter exatamente as mesmas qualificadas que a dash ja soma
   $qlDiff=0; foreach($gk in $grain.Keys){ $qn=0; if($qlPerGrain.ContainsKey($gk)){ $qn=$qlPerGrain[$gk] }; if($grain[$gk].qlf -ne $qn){ $qlDiff++ } }
   if($qlDiff -or $qlNoMail){ Write-Host ("::warning::QUAL: {0} celulas do grain divergem | {1} qualificadas sem e-mail" -f $qlDiff,$qlNoMail) }
