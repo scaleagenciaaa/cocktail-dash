@@ -426,7 +426,7 @@
 <script>
   // carrega os dados + app sempre frescos (cache-bust por timestamp) — F5 normal ja mostra o ultimo
   (function(){ var v = Date.now();
-    ['data.js','data-perfil.js','data-apice.js','data-insights.js','data-ascensao.js','data-datas.js','data-qual.js','app.js'].forEach(function(f){
+    ['data.js','data-perfil.js','data-apice.js','data-insights.js','data-ascensao.js','data-datas.js','data-qual.js','data-clint.js','app.js'].forEach(function(f){
       document.write('<script src="' + f + '?t=' + v + '"><\/script>');
     });
   })();

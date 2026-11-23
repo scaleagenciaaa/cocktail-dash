@@ -1730,8 +1730,13 @@ const QL={ marks:{}, v:'', pending:new Map(), inflight:false, fetching:false, ma
   f:{st:'pend',q:'',camp:'',sort:'new'}, lvl:0, sort:{k:'ok',rev:false}, shown:QL_PAGE, sticky:new Set(), flushT:0 };
 const qlLS={ get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }, del(k){ try{ localStorage.removeItem(k); }catch(e){} } };
 
-function qlStatus(id){ const p=QL.pending.get(id); if(p) return p.s; const m=QL.marks[id]; return m?m[0]:0; }
-function qlReason(id){ const p=QL.pending.get(id); if(p) return p.r||''; const m=QL.marks[id]; return m?(m[1]||''):''; }
+// Fonte principal desde 23/11/2026: funil "Cocktail Cardi Nigro Qualificadas" da Clint (data-clint.js, gerado pelo MCP quando o Erick pede).
+// Regra: ganha ou Primeiro Contato em diante = qualificada; perdida por Sem perfil/Sem dinheiro = não; Base há 48h+ = não; Base < 48h = em estudo.
+// A marcação manual (✓/✗) só vale para lead que não está na Clint (ex.: lista de espera).
+const QCD = window.DASH_CLINT || null, QC = (QCD && QCD.m) || null;
+const qlClint = id => (QC && QC[id]) || null;
+function qlStatus(id){ const c=qlClint(id); if(c) return c[0]; const p=QL.pending.get(id); if(p) return p.s; const m=QL.marks[id]; return m?m[0]:0; }
+function qlReason(id){ const c=qlClint(id); if(c) return c[1]||''; const p=QL.pending.get(id); if(p) return p.r||''; const m=QL.marks[id]; return m?(m[1]||''):''; }
 function qlApply(){   // soma as marcações em daily/grain: daí em diante sumDaily, árvore e V2 enxergam rok/rno como qualquer outra métrica
   for(const r of D.grain){ r.rok=0; r.rno=0; } for(const r of D.daily){ r.rok=0; r.rno=0; }
   for(const q of QL_ROWS){ const s=qlStatus(q.id); if(!s) continue; const k=s>0?'rok':'rno'; if(q.g) q.g[k]++; if(q.d) q.d[k]++; } }
@@ -1797,6 +1802,7 @@ function qlLive(){ const el=document.getElementById('qlLive'); if(!el) return; c
   else if(n) h=`<i class="busy"></i>Salvando ${int(n)} ${n===1?'marcação':'marcações'}…`;
   else if(QL.st==='wait') h='<i class="busy"></i>Conectando…';
   else { const s=Math.max(0,Math.round((Date.now()-QL.lastOk)/1000)); h=`<i></i>Ao vivo · atualizado ${s<3?'agora':`há ${s}s`}`; }
+  if(QCD) h=`<i></i>Status da Clint de ${esc(String(QCD.at||'').split(' ').map((x,i)=>i?x:x.split('-').reverse().slice(0,2).join('/')).join(' às '))}`+(n?` · salvando ${int(n)}…`:'');
   el.innerHTML=h; }
 function renderQual(){ const pq=document.getElementById('pageQual'); if(!pq||pq.hidden) return; qlApply(); qlRenderStats(); qlRenderList(); }
 function qlRenderStats(){ qlRenderHero(); qlRenderRank(); qlRenderDay(); qlRenderWhy(); }
@@ -1859,14 +1865,20 @@ function qlRenderDay(){ const el=document.getElementById('qlDay'); if(!el) retur
     <div class="tt-r"><span class="sub">Taxa real do dia: ${ev?pct(o.ok/ev*100):'—'}</span></div>`; }); }
 function qlRenderWhy(){ const elW=document.getElementById('qlWhy'), elB=document.getElementById('qlBy'); if(!elW) return; const why=new Map(), by=new Map(); let nNo=0, nEv=0;
   const seen=new Set(); for(const r of qlPeriod()){ if(seen.has(r.id)) continue; seen.add(r.id); const s=qlStatus(r.id); if(!s) continue; nEv++;
-    const who=QL.pending.has(r.id)?QL.who:((QL.marks[r.id]||[])[2]||'—'); let b=by.get(who); if(!b){ b={ok:0,no:0}; by.set(who,b); } if(s>0) b.ok++; else b.no++;
+    const cl=qlClint(r.id), who=cl?(cl[2]||'Comercial'):(QL.pending.has(r.id)?QL.who:((QL.marks[r.id]||[])[2]||'—')); let b=by.get(who); if(!b){ b={ok:0,no:0}; by.set(who,b); } if(s>0) b.ok++; else b.no++;
     if(s<0){ nNo++; const w=qlReason(r.id)||'Sem motivo informado'; why.set(w,(why.get(w)||0)+1); } }
   elW.innerHTML=nNo?bars([...why.entries()].sort((a,b)=>b[1]-a[1]).map(([label,n])=>({label,n,pct:n/nNo*100})),'var(--red)'):'<div class="sub">Nenhuma lead reprovada no período.</div>';
   elB.innerHTML=nEv?bars([...by.entries()].sort((a,b)=>(b[1].ok+b[1].no)-(a[1].ok+a[1].no)).map(([label,b])=>({label,n:b.ok+b.no,pct:(b.ok+b.no)/nEv*100})),'var(--blue2)'):'<div class="sub">Ninguém avaliou neste período ainda.</div>'; }
 
 // ---- lista para o comercial marcar ----
-function qlRowHTML(r){ const s=qlStatus(r.id), lead=(QL.map&&QL.map[r.id])||null, mk=QL.marks[r.id], pend=QL.pending.has(r.id), why=qlReason(r.id);
-  const by=s?(pend?'salvando…':`${esc(mk&&mk[2]||'')}${mk&&mk[3]?' · '+qlAgo(mk[3]):''}`):'';
+function qlRowHTML(r){ const s=qlStatus(r.id), lead=(QL.map&&QL.map[r.id])||null, mk=QL.marks[r.id], pend=QL.pending.has(r.id), why=qlReason(r.id), cl=qlClint(r.id);
+  const by=cl?`Clint · ${esc(cl[2]||'')} · ${esc(cl[3]||'')}`:(s?(pend?'salvando…':`${esc(mk&&mk[2]||'')}${mk&&mk[3]?' · '+qlAgo(mk[3]):''}`):'');
+  if(cl){ const lbl=s>0?'✓ Qualificada':(s<0?`✗ ${esc(why||'Não qualificada')}`:'⏳ Em estudo (Base < 48h)');
+    return `<div class="ql-row st${s}" data-id="${esc(r.id)}">
+    <div class="ql-lead"><div class="ql-name">${lead?esc(lead[0]||'(sem nome)'):'…'}</div><div class="ql-mail">${lead?esc(lead[1]):''}</div></div>
+    <div class="ql-info">${qlFatLabel(r.fat)?`<span class="ql-fat">${esc(qlFatLabel(r.fat))}</span>`:''}<span class="ql-dt">${cxDM(r.date)}</span><div class="ql-src" title="${esc(r.camp)} › ${esc(r.adset)} › ${esc(r.ad)}">${esc(qlCamp(r.camp))} › ${esc(pretty(r.ad))}</div></div>
+    <div class="ql-act"><span class="ql-clint st${s}" title="Status vindo da Clint">${lbl}</span><div class="ql-by">${by}</div></div>
+  </div>`; }
   const fat=qlFatLabel(r.fat);
   return `<div class="ql-row st${s}" data-id="${esc(r.id)}">
     <div class="ql-lead"><div class="ql-name">${lead?esc(lead[0]||'(sem nome)'):'…'}</div><div class="ql-mail">${lead?esc(lead[1]):''}</div></div>
