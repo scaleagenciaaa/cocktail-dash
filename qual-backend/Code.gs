@@ -9,6 +9,9 @@
 
 var MASTER_ID = '1WuETdVje43yvMfyQDHO1PObXj_G9G-t6JjG6q987Z4o', LEADS_GID = '603619749';
 var FORMS_ID = '1HuURt5bclbK2lUhbnDWvYmlwQowif-gFoVl_HV3Ukws', FORMS_GID = '0';
+// Página "Lista de espera Ápice" (cardinigro.com.br/lista-de-espera-apice): planilha FECHADA, lida com a conta que publicou
+// este script (editora). GET ?a=espera devolve só código da lead + data + UTMs + faixa de faturamento, sem nome/e-mail/WhatsApp/CNPJ.
+var ESPERA_ID = '1dSTS8qnRONQMC-GJQa0znhTJC0gat0MmViZVEWqqMyw';
 var PUBLIC_LIST = 'https://scaleagencia.github.io/cocktail-dash/data-qual.js';
 var ID_SALT = 'ccn|';   // igual ao build.ps1 (QualId)
 var HEAD = ['ID', 'Data do lead', 'Nome', 'E-mail', 'Telefone', 'Faturamento', 'Campanha', 'Conjunto', 'Anúncio', 'Status', 'Motivo', 'Marcado por', 'Quando'];
@@ -24,6 +27,7 @@ function doGet(e) {
       return out_(p.v && p.v === cur.v ? { ok: true, v: cur.v, same: true } : { ok: true, v: cur.v, m: cur.m });
     }
     if (p.a === 'selftest') return out_(selftest_());
+    if (p.a === 'espera') return out_(espera_());
     return out_({ ok: false, err: 'acao' });
   } catch (err) { return out_({ ok: false, err: msg_(err) }); }
 }
@@ -208,6 +212,9 @@ function leadsMap_(fresh) {
     var id = idOf_(em); if (!want[id] || map[id]) return;
     map[id] = [norm_(F.slot[0] >= 0 ? r[F.slot[0]] : ''), em];
   });
+  try {   // Lista de espera Ápice (planilha fechada): nome e e-mail para a aba de qualificação
+    esperaLinhas_().forEach(function (r) { if (want[r.id] && !map[r.id]) map[r.id] = [r.nome, r.em]; });
+  } catch (e) { /* planilha indisponível: segue sem ela */ }
   var obj = { at: Date.now(), map: map, want: Object.keys(want).length };
   try { putBig_('map2', JSON.stringify(obj), MAP_TTL); } catch (e) { /* sem cache: remonta na próxima */ }
   return obj;
@@ -229,4 +236,24 @@ function selftest_() {
     } finally { lock.releaseLock(); }
   }
   return { ok: true, listaPublica: mp.want, encontrados: found, faltando: mp.want - found, gravou: wrote, leuDeVolta: seen, limpou: removed, ms: Date.now() - t0 };
+}
+
+// ---- Lista de espera Ápice (planilha fechada) ----
+function esperaLinhas_() {
+  var v = SpreadsheetApp.openById(ESPERA_ID).getSheets()[0].getDataRange().getValues();
+  if (!v.length) return [];
+  var h = v[0].map(function (x) { return String(x).trim().toLowerCase(); }), ix = function (n) { return h.indexOf(n); }, out = [];
+  for (var i = 1; i < v.length; i++) {
+    var r = v[i], em = norm_(r[ix('email')]).toLowerCase(); if (em.indexOf('@') < 0) continue;
+    var w = r[ix('enviado_em')], t = w instanceof Date ? w : new Date(String(w)), d = isNaN(t) ? '' : Utilities.formatDate(t, 'America/Sao_Paulo', 'yyyy-MM-dd');
+    out.push({ id: idOf_(em), em: em, nome: norm_(r[ix('nome')]), d: d, c: norm_(r[ix('utm_campaign')]), s: norm_(r[ix('utm_medium')]), a: norm_(r[ix('utm_content')]), f: norm_(r[ix('faturamento_mensal')]) });
+  }
+  return out;
+}
+function espera_() {   // público e sem dados pessoais; cache de 5 min
+  var raw = getBig_('esp'); if (raw) return JSON.parse(raw);
+  var rows = esperaLinhas_().map(function (r) { return { id: r.id, d: r.d, c: r.c, s: r.s, a: r.a, f: r.f }; });
+  var p = { ok: true, at: Date.now(), rows: rows };
+  try { putBig_('esp', JSON.stringify(p), 300); } catch (e) { }
+  return p;
 }
