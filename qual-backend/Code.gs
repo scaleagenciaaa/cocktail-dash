@@ -12,6 +12,9 @@ var FORMS_ID = '1HuURt5bclbK2lUhbnDWvYmlwQowif-gFoVl_HV3Ukws', FORMS_GID = '0';
 // Página "Lista de espera Ápice" (cardinigro.com.br/lista-de-espera-apice): planilha FECHADA, lida com a conta que publicou
 // este script (editora). GET ?a=espera devolve só código da lead + data + UTMs + faixa de faturamento, sem nome/e-mail/WhatsApp/CNPJ.
 var ESPERA_ID = '1dSTS8qnRONQMC-GJQa0znhTJC0gat0MmViZVEWqqMyw';
+// Planilha de compradoras do Ápice (ficou FECHADA em 23/11/2026). GET ?a=apice devolve só as colunas que a dash usa
+// (situação, data do coquetel, valor, sinal, parcelas); nome e e-mail saem como CÓDIGO (hash), nunca em texto.
+var APICE_ID = '1bclGSGY51UvnFwY2zrRgwwrEXJL2Dgu8sb6OStGWNUE', APICE_GID = 1900437058;
 var PUBLIC_LIST = 'https://scaleagencia.github.io/cocktail-dash/data-qual.js';
 var ID_SALT = 'ccn|';   // igual ao build.ps1 (QualId)
 var HEAD = ['ID', 'Data do lead', 'Nome', 'E-mail', 'Telefone', 'Faturamento', 'Campanha', 'Conjunto', 'Anúncio', 'Status', 'Motivo', 'Marcado por', 'Quando'];
@@ -28,6 +31,7 @@ function doGet(e) {
     }
     if (p.a === 'selftest') return out_(selftest_());
     if (p.a === 'espera') return out_(espera_());
+    if (p.a === 'apice') return out_(apice_());
     return out_({ ok: false, err: 'acao' });
   } catch (err) { return out_({ ok: false, err: msg_(err) }); }
 }
@@ -255,5 +259,41 @@ function espera_() {   // público e sem dados pessoais; cache de 5 min
   var rows = esperaLinhas_().map(function (r) { return { id: r.id, d: r.d, c: r.c, s: r.s, a: r.a, f: r.f }; });
   var p = { ok: true, at: Date.now(), rows: rows };
   try { putBig_('esp', JSON.stringify(p), 300); } catch (e) { }
+  return p;
+}
+
+// ---- Ápice (planilha fechada) ----
+function deac_(s) { return norm_(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function nameKey_(s) { return deac_(s).replace(/\s+/g, ' ').trim(); }   // igual ao NameKey do build.ps1
+function nameId_(k) {   // igual ao NameHash do build.ps1
+  var b = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, 'ccnn|' + k, Utilities.Charset.UTF_8), h = '';
+  for (var i = 0; i < 6; i++) { var x = (b[i] + 256) % 256; h += (x < 16 ? '0' : '') + x.toString(16); }
+  return 'n' + h;
+}
+function apice_() {   // público e sem dados pessoais; cache de 5 min
+  var raw = getBig_('apc'); if (raw) return JSON.parse(raw);
+  var ss = SpreadsheetApp.openById(APICE_ID), shs = ss.getSheets(), sh = shs[0];
+  for (var s = 0; s < shs.length; s++) if (shs[s].getSheetId() === APICE_GID) { sh = shs[s]; break; }
+  var v = sh.getDataRange().getDisplayValues(), hi = -1;
+  for (var i = 0; i < Math.min(8, v.length); i++) { var j = deac_(v[i].join('|')); if (j.indexOf('email') >= 0 && j.indexOf('situa') >= 0) { hi = i; break; } }
+  if (hi < 0) return { ok: false, err: 'cabecalho (EMAIL + SITUACAO) nao encontrado' };
+  var H = v[hi].map(function (x) { return nameKey_(x); }), hasCoq = H.some(function (h) { return h.indexOf('coquetel') >= 0; });
+  var keep = [], kind = {};
+  H.forEach(function (h, k) {
+    if (h.indexOf('nome') >= 0) { keep.push(k); kind[k] = 'n'; }
+    else if (h.indexOf('email') >= 0 || h.indexOf('e-mail') >= 0) { keep.push(k); kind[k] = 'e'; }
+    else if (/situa|coquetel|^valor|sinal|entrada|qntd|qtd|quantidade/.test(h) || (!hasCoq && /^data/.test(h))) keep.push(k);
+  });
+  var rows = v.map(function (r, i) {
+    return keep.map(function (k) {
+      var x = r[k];
+      if (i <= hi) return i === hi ? x : '';                       // título/cabeçalho: só o cabeçalho segue
+      if (kind[k] === 'e') { var e = norm_(x).toLowerCase(); return e.indexOf('@') >= 0 ? idOf_(e) : ''; }
+      if (kind[k] === 'n') { var nk = nameKey_(x); return nk ? nameId_(nk) : ''; }
+      return x;
+    });
+  });
+  var p = { ok: true, at: Date.now(), rows: rows };
+  try { putBig_('apc', JSON.stringify(p), 300); } catch (e) { }
   return p;
 }
