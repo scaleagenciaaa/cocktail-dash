@@ -393,6 +393,7 @@ foreach($r in $ffd){
 $QUAL_API_URL='https://script.google.com/macros/s/AKfycby_CCF9BctQJeblE6AcS9iF4iolGMkiTNlHQXl0hkiFFldHrZW61d1HKejstje-b3OyGQ/exec'
 $leadSha=[Security.Cryptography.SHA256]::Create(); $leadEnc=New-Object Text.UTF8Encoding($false)
 function LeadId($em){ return 'q'+[BitConverter]::ToString($script:leadSha.ComputeHash($script:leadEnc.GetBytes('ccn|'+$em)),0,6).Replace('-','').ToLower() }
+function NameHash($nk){ return 'n'+[BitConverter]::ToString($script:leadSha.ComputeHash($script:leadEnc.GetBytes('ccnn|'+$nk)),0,6).Replace('-','').ToLower() }   # igual ao nameId_ do Code.gs (nome ja passado por NameKey)
 function IsQualEspera($f){ $t=Deaccent (Norm $f); if($t -eq ''){ return $false }; if($t -match '(?i)menos|abaixo|^ate\b'){ return $false }; return $true }   # faixas da pagina: R$ 200 mil a 300 mil para cima
 $esperaRows=@(); $esperaById=@{}; $esperaLeads=0; $esperaQlf=0
 try{ [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $esJ=Invoke-RestMethod -Uri "$QUAL_API_URL`?a=espera" -TimeoutSec 120; if($esJ.ok){ $esperaRows=@($esJ.rows) } else { Write-Host "::warning::ESPERA: backend respondeu sem ok" } }catch{ Write-Host "::warning::ESPERA: backend nao respondeu ($($_.Exception.Message))" }
@@ -631,8 +632,27 @@ function ApIssue($l,$k,$x,$a,$b){ $script:apIssues += [pscustomobject]@{l=$l;k=$
 if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao' -or $Mode -eq 'estudo' -or $Mode -eq 'perfil'){
   $APICE_ID='1bclGSGY51UvnFwY2zrRgwwrEXJL2Dgu8sb6OStGWNUE'; $APICE_GID='1900437058'
   $aCsv=Join-Path $dataDir 'apice.csv'
-  (New-Object System.Net.WebClient).DownloadFile("https://docs.google.com/spreadsheets/d/$APICE_ID/export?format=csv&gid=$APICE_GID",$aCsv)
-  $aRows=@(Read-Csv $aCsv)
+  # 24/11/2026: a planilha ficou PRIVADA (401) e derrubava o build inteiro. Agora: 1) export direto (se voltar a ser publica);
+  # 2) senao o backend (qual-backend/Code.gs ?a=apice, roda como agenciaup13) devolve as mesmas colunas, mas com nome/e-mail
+  # trocados por CODIGO (sem dado pessoal na internet) -> aqui o codigo vira o e-mail/nome real pelas nossas bases (leads,
+  # kiwify, forms, controle de vendas). 3) se os dois falharem: Apice fica com o arquivo anterior e o RESTO da dash segue.
+  $apHashed=$false; $apFail=$false
+  try{ (New-Object System.Net.WebClient).DownloadFile("https://docs.google.com/spreadsheets/d/$APICE_ID/export?format=csv&gid=$APICE_GID",$aCsv) }
+  catch{
+    try{ $aj=Invoke-RestMethod -Uri "$QUAL_API_URL`?a=apice" -TimeoutSec 180; if(-not $aj.ok){ throw ([string]$aj.err) }
+      $sbA=New-Object Text.StringBuilder; foreach($ar in @($aj.rows)){ [void]$sbA.AppendLine((@($ar) | ForEach-Object { '"'+(([string]$_) -replace '"','""')+'"' }) -join ',') }
+      [IO.File]::WriteAllText($aCsv,$sbA.ToString(),(New-Object Text.UTF8Encoding($false))); $apHashed=$true; Write-Host "APICE: planilha privada -> lida pelo backend (codigos, sem dado pessoal)" }
+    catch{ $apFail=$true; Write-Host "::warning::APICE: planilha privada e backend falhou ($($_.Exception.Message)) -> Apice/Ascensao mantem o arquivo anterior" } }
+  $hE=@{}; $hN=@{}
+  if($apHashed){   # codigo -> e-mail/nome real, a partir das bases que o build ja tem
+    function AddHE($e){ $e=(Norm $e).ToLower(); if($e -match '@'){ $script:hE[(LeadId $e)]=$e } }
+    function AddHN($n){ $nk=NameKey $n; if($nk -match ' '){ $script:hN[(NameHash $nk)]=$nk } }
+    foreach($r in $ld){ AddHE $r[$L_EMAIL]; AddHN (($r[0])+' '+($r[1])) }
+    foreach($r in $kd){ AddHE $r[$K_EMAIL]; AddHN $r[$K_NOME] }
+    foreach($r in $ffd){ AddHE $r[$FF_EMAIL] }
+    foreach($x in $extras){ AddHE $x.email }
+    try{ foreach($e in $manEvByEmail.Keys){ AddHE $e; AddHN ([string]$manEvByEmail[$e].nome) } }catch{} }
+  $aRows=@(); if(-not $apFail){ $aRows=@(Read-Csv $aCsv) }
   $aHi=-1; for($i=0;$i -lt [Math]::Min(8,$aRows.Count);$i++){ $jn=Deaccent (($aRows[$i]) -join '|'); if($jn -match 'email' -and $jn -match 'situa'){ $aHi=$i; break } }
   if($aHi -lt 0){ Write-Host 'APICE: !!! cabecalho (EMAIL + SITUACAO) NAO encontrado na planilha -> Apice vazio neste build' }
   else{
@@ -646,12 +666,13 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao' -or $Mode -eq 
     for($i=$aHi+1;$i -lt $aRows.Count;$i++){ $r=$aRows[$i]; $ln=$i+1   # numero da linha NA PLANILHA (1 = titulo)
       $em=(ACell $r $A_EMAIL).ToLower(); $nm=ACell $r $A_NOME
       if($em -eq '' -and $nm -eq ''){ continue }                                   # linha vazia
+      $keyH=$null; if($apHashed){ $em=$(if($hE.ContainsKey($em)){$hE[$em]}else{''}); $keyH=$(if($hN.ContainsKey($nm)){$hN[$nm]}else{''}) }   # codigo -> real (ou vazio se nao esta nas bases)
       if((Deaccent (ACell $r $A_SIT)) -match 'inativ'){ $apInativas++; continue }  # Inativa = desconsiderar
       $apAtivas++
       $vTxt=ACell $r $A_VALOR; $v=MoneyA $vTxt; $sTxt=ACell $r $A_SINAL; $s=MoneyA $sTxt
       $qTxt=ACell $r $A_QTD; $q=0; if($qTxt -match '^\d+$'){ $q=[int]$qTxt }
       $dTxt=ACell $r $A_DATA; $dt=''; if($dTxt -match '^(\d{1,2})/(\d{1,2})/(\d{4})'){ $dt=('{0}-{1:d2}-{2:d2}' -f $Matches[3],[int]$Matches[2],[int]$Matches[1]) }
-      $key=NameKey $nm
+      $key=$(if($null -ne $keyH){$keyH}else{NameKey $nm})
       if($em -match '@' -or $key -match ' '){ $apList+=[pscustomobject]@{email=$(if($em -match '@'){$em}else{''});key=$key;valor=$(if($null -ne $v){$v}else{0.0});d=$dt} }   # d = data da venda (filtro de periodo da aba Apice)
       if($null -eq $v){ ApIssue $ln 'novalor' $vTxt 0 0; continue }               # sem VALOR: fora do financeiro
       if($null -eq $s){ if($sTxt -ne ''){ ApIssue $ln 'sinaltxt' $sTxt 0 0 }; $s=0.0 }
@@ -824,7 +845,7 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
   $apTotVal=0.0; foreach($x in $apSales){ $apTotVal += $x.v }
   $apice=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; ativas=$apAtivas; inativas=$apInativas
     sales=@($apSales); issues=@($apIssues) }
-  if($Mode -eq 'all' -or $Mode -eq 'apice'){ WriteJs 'data-apice.js' 'DASH_APICE' $apice }
+  if(($Mode -eq 'all' -or $Mode -eq 'apice') -and -not $apFail){ WriteJs 'data-apice.js' 'DASH_APICE' $apice }
 
   # --- ASCENSAO: escada de valor Trafego -> Cocktail -> Apice. Valor REAL de cada participante (VALOR da planilha) ---
   $kByE=@{}; $kByN=@{}  # compradoras do Cocktail (kiwify paid): email/nome(Cliente) -> data da compra
@@ -841,7 +862,7 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
   $apTicket=0; if($apSales.Count){ $apTicket=[math]::Round($apTotVal/$apSales.Count,2) }
   $asc=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; apiceTicket=$apTicket; totalValor=[math]::Round($apTotVal,2)
     totalApice=$apAtivas; ascTotal=($ascE+$ascN); ascByEmail=$ascE; ascByName=$ascN; ascDaily=$ascArr }
-  if($Mode -eq 'all' -or $Mode -eq 'ascensao'){ WriteJs 'data-ascensao.js' 'DASH_ASC' $asc }
+  if(($Mode -eq 'all' -or $Mode -eq 'ascensao') -and -not $apFail){ WriteJs 'data-ascensao.js' 'DASH_ASC' $asc }
   Write-Host ("ASCENSAO: {0} rastreadas (email={1} nome={2}) de {3} ativas no Apice | ticket medio R$ {4}" -f ($ascE+$ascN),$ascE,$ascN,$apAtivas,(M0 $apTicket))
 }
 
