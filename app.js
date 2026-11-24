@@ -303,6 +303,13 @@ function renderApIssues(){
 // ---- funnel ----
 function renderFunnel(cur,prev){
   const c=metrics(cur), p=metrics(prev), rc=realM(cur), rp=realM(prev);
+  // reuniões agendadas (Clint): mesmo período e o período anterior de mesmo tamanho, como o resto do funil
+  const agLen=dayspan(state.start,state.end), agPe=fmtD(addDays(parseD(state.start),-1)), agPs=fmtD(addDays(parseD(agPe),-(agLen-1)));
+  const agC=AG?agCount(state.start,state.end):null, agP=AG?agCount(agPs,agPe):null;
+  const cpaC=agC&&agC.n?cur.spend/agC.n:null, cpaP=agP&&agP.n?prev.spend/agP.n:null;
+  const agRow = agC ? [{label:'📅 Reuniões agendadas', val:int(agC.n), sk:'Custo por agendamento', sv:cpaC!=null?money(cpaC):'—', sd:(cpaC!=null&&cpaP!=null)?deltaHTML(cpaC,cpaP,false):'',
+       x2:`MQL que agendaram: <b>${pct(safe(agC.n,c.qlf)*100)}</b> <span class="sub">(${int(agC.n)} de ${int(c.qlf)})</span>`,
+       rl:'Agendadas que compraram', rv:`${pct(safe(agC.won,agC.n)*100)} <span class="sub">(${int(agC.won)})</span>`, d:'', hl:true}] : [];
   const rows=[
     {label:'Impressões', val:int(c.impr), sk:'CPM', sv:money(c.cpm), rl:'CTR', rv:pct(c.ctr), d:deltaHTML(c.ctr,p.ctr)},
     {label:'Link Clicks', val:int(c.clicks), sk:'CPC', sv:money(c.cpc), rl:'CR (clique → LP)', rv:pct(c.cr), d:deltaHTML(c.cr,p.cr)},
@@ -313,6 +320,7 @@ function renderFunnel(cur,prev){
        hl:true, target:{val:c.cplqlf,max:TARGET_CPL_QLF,label:`meta R$ ${nf0.format(TARGET_CPL_QLF)}`}, sd:deltaHTML(c.cplqlf,p.cplqlf,false)},
     {label:'Qualificadas reais', val:int(rc.ok), sk:'Custo MQL real', sv:rc.cost!=null?money(rc.cost):'—', rl:'Avaliadas pelo comercial', rv:`${pct(safe(rc.ev,c.qlf)*100)} <span class="sub">(${int(rc.ev)} de ${int(c.qlf)})</span>`, d:'',
        x2:`Taxa de qualificação real: <b>${pct(rc.rate||0)}</b> ${rc.rate!=null&&rp.rate!=null?deltaHTML(rc.rate,rp.rate):''}`, hl:true},
+    ...agRow,
     {label:'Vendas', val:int(c.sales), sk:'CAC', sv:money(c.cac), rl:'ROAS', rv:(c.roas).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'x', d:deltaHTML(c.roas,p.roas),
        hl:true, target:{val:c.cac,max:TARGET_CAC,label:`meta R$ ${nf0.format(TARGET_CAC)}`}, sd:deltaHTML(c.cac,p.cac,false)}
   ];
@@ -1059,7 +1067,8 @@ const cxG = k => `<svg class="cx-g ${k}" viewBox="0 0 16 18" aria-hidden="true">
 // agregado de um intervalo (com vendedora: vendas/receita só dela)
 function cxAgg(a,b,seller){ const s=sumDaily(a,b), ap=apSold(a,b); let sales=s.sales, rev=s.revenue;
   if(seller){ sales=0; rev=0; for(const r of arr(D.sellers)){ if(r.seller===seller && r.date>=a && r.date<=b){ sales+=r.sales; rev+=r.revenue; } } }
-  return {spend:s.spend,leads:s.leads,qlf:s.qlf,sales,rev,apn:ap.n,apv:ap.v,days:Math.max(1,dayspan(a,b))}; }
+  const ag=AG?agCount(a,b,seller).n:0;
+  return {spend:s.spend,leads:s.leads,qlf:s.qlf,ag,sales,rev,apn:ap.n,apv:ap.v,days:Math.max(1,dayspan(a,b))}; }
 // métricas (add = somável; den = denominador da razão -> "—" quando zero; sel = muda com a vendedora; noSel = sem sentido com vendedora)
 const CX_M = [
   {k:'spend', l:'Investimento', f:m0, add:true, dir:0},
@@ -1068,6 +1077,8 @@ const CX_M = [
   {k:'txq', l:'% qualificadas', f:pct, v:o=>safe(o.qlf,o.leads)*100, den:o=>o.leads, dir:1},
   {k:'cpl', l:'CPL', f:m0, v:o=>safe(o.spend,o.leads), den:o=>o.leads, dir:-1},
   {k:'cplq', l:'CPL qualificado', f:m0, v:o=>safe(o.spend,o.qlf), den:o=>o.qlf, dir:-1},
+  {k:'ag', l:'📅 Reuniões agendadas', f:int, add:true, dir:1, sel:true},
+  {k:'cpag', l:'📅 Custo por agendamento', f:m0, v:o=>safe(o.spend,o.ag), den:o=>o.ag, dir:-1, noSel:true},
   {k:'sales', l:'Vendas do Cocktail', f:int, add:true, dir:1, sel:true},
   {k:'rev', l:'Receita do Cocktail', f:m0, add:true, dir:1, sel:true},
   {k:'ticket', l:'Ticket médio', f:m0, v:o=>safe(o.rev,o.sales), den:o=>o.sales, dir:0, sel:true},
@@ -1139,7 +1150,7 @@ function renderCxComp(){
   const el=document.getElementById('cxComp'); if(!el) return;
   const days=[]; for(let i=6;i>=0;i--){ const d=fmtD(addDays(parseD(state.end),-i)); if(d>=state.start) days.push(d); }
   const cols=days.map(d=>({d,o:cxAgg(d,d)})), tot=cxAgg(state.start,state.end);
-  const ms=['spend','leads','qlf','cplq','sales','rev','roas','apn','roasap'].map(cxM);
+  const ms=['spend','leads','qlf','cplq','ag','cpag','sales','rev','roas','apn','roasap'].map(cxM);
   el.innerHTML=`<thead><tr class="cx-band"><th></th><th colspan="${cols.length}">Últimos ${cols.length} dias do período</th><th colspan="2" class="cx-tot">Período</th></tr>
     <tr><th>Métrica</th>${cols.map(c=>`<th class="${c.d===CX_TODAY?'cx-today':''}">${cxDM(c.d)}<small>${c.d===CX_TODAY?'hoje':WD[parseD(c.d).getDay()]}</small></th>`).join('')}
     <th class="cx-tot">Total<small>${cxDM(state.start)} → ${cxDM(state.end)}</small></th><th class="cx-tot">Média/dia<small>${int(tot.days)} dias</small></th></tr></thead>
@@ -1408,6 +1419,10 @@ const AG_COLORS = { Evellyn:'#7c5cff', Mayara:'#14b8a6', Mayra:'#f59e0b', Sabrin
 const AG_PAL = ['#7c5cff','#14b8a6','#f59e0b','#ec4899','#3b82f6','#ef4444','#94a3b8'];
 const agColor = (n,i) => AG_COLORS[n] || AG_PAL[i % AG_PAL.length];
 const AG_ROWS = (()=>{ if(!AG) return []; return arr(AG.rows).map(r=>({id:r[0],d:r[1],seller:AG.sellers[r[2]]||'—',real:!!r[3],neg:!!r[4],res:r[5],lead:r[6],hrs:r[7],why:r[9]||''})); })();
+// agendamentos num intervalo (Funil e Consolidado). seller = vendedora da Kiwify/planilha: casa pelo 1º nome com quem agendou na Clint.
+function agCount(a,b,seller){ const s1=seller?nkey(pretty(seller)).split(' ')[0]:''; let n=0, won=0;
+  for(const r of AG_ROWS){ if(r.d<a||r.d>b) continue; if(s1 && nkey(r.seller).split(' ')[0]!==s1) continue; n++; if(r.res===2) won++; }
+  return {n,won}; }
 function agMed(a){ const s=a.filter(v=>v!=null&&v>=0).sort((x,y)=>x-y), n=s.length; if(!n) return null; return n%2?s[n>>1]:(s[n/2-1]+s[n/2])/2; }
 const agDur = h => h==null ? '—' : (h<1 ? `${Math.max(1,Math.round(h*60))} min` : (h<48 ? `${h.toLocaleString('pt-BR',{maximumFractionDigits:1})} h` : `${(h/24).toLocaleString('pt-BR',{maximumFractionDigits:1})} dias`));
 function renderAgenda(){
