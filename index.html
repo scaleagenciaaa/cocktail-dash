@@ -310,6 +310,44 @@
       <div class="micro-note" id="comProfIntro" style="margin-left:0">—</div>
       <div id="comProfile" class="objlist" style="margin-top:10px"></div>
     </div>
+
+    <!-- ===== Reuniões agendadas (Clint) ===== -->
+    <div class="card ag-hero">
+      <div class="ag-hero-top">
+        <div><div class="ag-hero-t">📅 Reuniões agendadas</div><div class="ag-hero-s" id="agIntro">—</div></div>
+        <span class="ag-src" id="agSrc"></span>
+      </div>
+      <div class="ag-kpis" id="agKpis"></div>
+    </div>
+    <div class="ag-grid">
+      <div class="card">
+        <div class="chart-title">🔻 Do MQL à venda</div>
+        <div class="micro-note" style="margin-left:0">Leads do período: quantas viraram qualificada real, quantas tiveram reunião agendada e quantas compraram.</div>
+        <div id="agFunnel" class="ag-funnel"></div>
+      </div>
+      <div class="card">
+        <div class="chart-title">🏆 Quem mais agenda</div>
+        <div class="micro-note" style="margin-left:0">Quem moveu a lead para "Reunião Agendada" na Clint, e o que aconteceu depois.</div>
+        <div id="agSellers" class="ag-sellers"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="chart-title">📆 Agendamentos por dia</div>
+      <div class="ag-legend" id="agLegend"></div>
+      <div id="agDay" class="ag-chart"></div>
+    </div>
+    <div class="ag-grid">
+      <div class="card">
+        <div class="chart-title">🎯 Custo por agendamento por campanha</div>
+        <div class="micro-note" style="margin-left:0" id="agCampNote">—</div>
+        <div class="table-scroll"><table id="agCamp"><thead></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="chart-title">🧩 Por que as reuniões não viram venda</div>
+        <div class="micro-note" style="margin-left:0">Motivo de perda marcado na Clint, só das leads que tiveram reunião agendada no período.</div>
+        <div id="agWhy" class="objlist" style="margin-top:8px"></div>
+      </div>
+    </div>
   </div>
 
   <div id="pageTempo" hidden>
@@ -426,7 +464,7 @@
 <script>
   // carrega os dados + app sempre frescos (cache-bust por timestamp) — F5 normal ja mostra o ultimo
   (function(){ var v = Date.now();
-    ['data.js','data-perfil.js','data-apice.js','data-insights.js','data-ascensao.js','data-datas.js','data-qual.js','data-clint.js','app.js'].forEach(function(f){
+    ['data.js','data-perfil.js','data-apice.js','data-insights.js','data-ascensao.js','data-datas.js','data-qual.js','data-clint.js','data-agenda.js','app.js'].forEach(function(f){
       document.write('<script src="' + f + '?t=' + v + '"><\/script>');
     });
   })();

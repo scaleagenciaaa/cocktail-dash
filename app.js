@@ -1397,6 +1397,90 @@ function renderComercial(){
       <div class="fatbar">${segs}</div>
       <div class="qval"><b>${int(x.tot)}</b> <span class="sub">vendas</span></div></div>`;
   }).join('') : '<div class="sub">Sem base no período.</div>');
+  try{ renderAgenda(); }catch(err){ console.error('Agendamentos:',err); }
+}
+
+// ===================== reuniões agendadas (Clint, data-agenda.js — gerado via MCP quando o Erick pede) =====================
+// 1 linha por negócio do funil "Cocktail Cardi Nigro Qualificadas" que entrou em "Reunião Agendada" (ou direto em "Realizada").
+// Data = dia do agendamento; vendedora = quem moveu a lead na Clint. Sem dado pessoal: a lead vem como código (mesmo da aba Qualificação).
+const AG = window.DASH_AGENDA || null;
+const AG_COLORS = { Evellyn:'#7c5cff', Mayara:'#14b8a6', Mayra:'#f59e0b', Sabrina:'#ec4899', Comercial:'#94a3b8' };
+const AG_PAL = ['#7c5cff','#14b8a6','#f59e0b','#ec4899','#3b82f6','#ef4444','#94a3b8'];
+const agColor = (n,i) => AG_COLORS[n] || AG_PAL[i % AG_PAL.length];
+const AG_ROWS = (()=>{ if(!AG) return []; return arr(AG.rows).map(r=>({id:r[0],d:r[1],seller:AG.sellers[r[2]]||'—',real:!!r[3],neg:!!r[4],res:r[5],lead:r[6],hrs:r[7],why:r[9]||''})); })();
+function agMed(a){ const s=a.filter(v=>v!=null&&v>=0).sort((x,y)=>x-y), n=s.length; if(!n) return null; return n%2?s[n>>1]:(s[n/2-1]+s[n/2])/2; }
+const agDur = h => h==null ? '—' : (h<1 ? `${Math.max(1,Math.round(h*60))} min` : (h<48 ? `${h.toLocaleString('pt-BR',{maximumFractionDigits:1})} h` : `${(h/24).toLocaleString('pt-BR',{maximumFractionDigits:1})} dias`));
+function renderAgenda(){
+  const hero=document.getElementById('agKpis'); if(!hero) return;
+  if(!AG){ hero.innerHTML='<div class="sub">Sem dados de agendamento ainda.</div>'; return; }
+  const P=AG_ROWS.filter(r=>r.d>=state.start&&r.d<=state.end), n=P.length;
+  const m=sumDaily(state.start,state.end), spend=m.spend||0, mql=m.qlf||0;
+  const won=P.filter(r=>r.res===2).length, open=P.filter(r=>r.res===1).length, lost=P.filter(r=>r.res===-1).length;
+  const adv=P.filter(r=>r.real||r.neg||r.res===2).length;
+  const medH=agMed(P.map(r=>r.hrs));
+  const cpa=n?spend/n:null, conv=n?won/n*100:0, rateMql=mql?n/mql*100:0;
+  const at=String(AG.at||''), atTxt=at?`${at.slice(8,10)}/${at.slice(5,7)} às ${at.slice(11,16)}`:'—';
+  document.getElementById('agSrc').innerHTML=`<i></i>Clint · atualizado ${atTxt}`;
+  document.getElementById('agIntro').innerHTML = n
+    ? `No período, o comercial agendou <b>${int(n)}</b> ${n===1?'reunião':'reuniões'} e <b>${int(won)}</b> já ${won===1?'virou venda':'viraram venda'}. Cada agendamento custou <b>${money(cpa)}</b> em tráfego.`
+    : 'Nenhuma reunião agendada no período selecionado.';
+  const kpi=(ic,v,l,s,cl)=>`<div class="ag-kpi ${cl||''}"><div class="ag-kpi-i">${ic}</div><div class="ag-kpi-v">${v}</div><div class="ag-kpi-l">${l}</div>${s?`<div class="ag-kpi-s">${s}</div>`:''}</div>`;
+  hero.innerHTML =
+    kpi('📅',int(n),'Reuniões agendadas',`${int(open)} em andamento`,'k1') +
+    kpi('💸',cpa!=null?money(cpa):'—','Custo por agendamento',`${money(spend)} investidos`,'k2') +
+    kpi('🎯',pct(rateMql),'MQL que agendaram',`${int(n)} de ${int(mql)} MQL`,'k3') +
+    kpi('⚡',agDur(medH),'Até agendar (mediana)','da entrada da lead até a reunião marcada','k4') +
+    kpi('🤝',pct(conv),'Agendadas que compraram',`${int(won)} vendas · ${int(lost)} perdidas`,'k5') +
+    kpi('💰',won?money(spend/won):'—','Custo por venda via reunião','investido ÷ vendas das agendadas','k6');
+  // ---- funil ----
+  const qa = (typeof qlAgg==='function' && typeof qlPeriod==='function') ? qlAgg(qlPeriod()) : null;
+  const steps=[['MQL',mql,'#94a3b8'],['Qualificadas reais',qa?qa.ok:null,'#3b82f6'],['Reunião agendada',n,'#7c5cff'],['Seguiram após a reunião',adv,'#14b8a6'],['Compraram',won,'#16a34a']].filter(s=>s[1]!=null);
+  const top=Math.max(1,steps[0][1]);
+  document.getElementById('agFunnel').innerHTML = steps.map((s,i)=>{ const w=Math.max(6,s[1]/top*100), prev=i?steps[i-1][1]:null;
+    return `<div class="agf-row"><div class="agf-l">${s[0]}</div><div class="agf-bar"><span style="width:${w.toFixed(1)}%;background:${s[2]}"><b>${int(s[1])}</b></span></div><div class="agf-c">${i&&prev?`${pct(s[1]/prev*100)}<small> da etapa anterior</small>`:''}</div></div>`; }).join('') +
+    `<div class="micro-note" style="margin-left:0;margin-top:6px">"Seguiram" = foram para Reunião Realizada, Em Negociação ou compraram. As etapas usam a data de cada coisa no período (MQL pela entrada, reunião pelo dia do agendamento).</div>`;
+  // ---- vendedoras ----
+  const sm=new Map(); P.forEach(r=>{ let o=sm.get(r.seller); if(!o){ o={name:r.seller,n:0,won:0,open:0,lost:0,adv:0,h:[]}; sm.set(r.seller,o); } o.n++; if(r.res===2) o.won++; else if(r.res===1) o.open++; else if(r.res===-1) o.lost++; if(r.real||r.neg||r.res===2) o.adv++; o.h.push(r.hrs); });
+  const ss=[...sm.values()].sort((a,b)=>b.n-a.n||b.won-a.won), maxN=Math.max(1,...ss.map(x=>x.n));
+  const bestConv=ss.filter(x=>x.n>=5).sort((a,b)=>b.won/b.n-a.won/a.n)[0], fastest=ss.filter(x=>x.n>=5).map(x=>({x,h:agMed(x.h)})).filter(o=>o.h!=null).sort((a,b)=>a.h-b.h)[0];
+  document.getElementById('agSellers').innerHTML = ss.length ? ss.map((x,i)=>{ const c=agColor(x.name,AG.sellers.indexOf(x.name)), cv=x.n?x.won/x.n*100:0, h=agMed(x.h);
+    const badges=[i===0?'<span class="ag-badge gold">👑 mais agenda</span>':'', bestConv&&bestConv.name===x.name?'<span class="ag-badge green">🎯 melhor conversão</span>':'', fastest&&fastest.x.name===x.name?'<span class="ag-badge blue">⚡ agenda mais rápido</span>':''].join('');
+    return `<div class="ag-seller"><div class="ag-av" style="background:${c}">${esc(String(x.name).charAt(0))}</div>
+      <div class="ag-sb"><div class="ag-sn">${['🥇','🥈','🥉'][i]||''} ${esc(x.name)} ${badges}</div>
+        <div class="ag-track"><span style="width:${(x.n/maxN*100).toFixed(1)}%;background:${c}"></span></div>
+        <div class="ag-ss"><b>${int(x.n)}</b> agendadas (${pct(n?x.n/n*100:0)}) · <b>${int(x.won)}</b> vendas · conversão <b>${pct(cv)}</b> · ${int(x.open)} em andamento · agenda em ~${agDur(h)}</div></div></div>`; }).join('')
+    : '<div class="sub">Sem agendamentos no período.</div>';
+  // ---- por dia (barras empilhadas por vendedora) ----
+  const names=ss.map(x=>x.name), dm=new Map();
+  for(const r of P){ let o=dm.get(r.d); if(!o){ o={}; dm.set(r.d,o); } o[r.seller]=(o[r.seller]||0)+1; }
+  const days=[]; for(let d=parseD(state.start), e=parseD(state.end); d<=e; d=addDays(d,1)) days.push(fmtD(d));
+  document.getElementById('agLegend').innerHTML = names.map(nm=>`<span class="ag-lg"><i style="background:${agColor(nm,AG.sellers.indexOf(nm))}"></i>${esc(nm)}</span>`).join('');
+  const el=document.getElementById('agDay');
+  if(!days.length||!n){ el.innerHTML='<div class="ov-empty">Sem agendamentos no período.</div>'; }
+  else { const W=Math.max(320,el.clientWidth||700), H=200, pl=26, pr=6, pt=10, pb=22, pw=W-pl-pr, ph=H-pt-pb, base=pt+ph, nd=days.length;
+    const max=Math.max(1,...days.map(k=>Object.values(dm.get(k)||{}).reduce((s,v)=>s+v,0))), gw=pw/nd, bw=Math.max(2,Math.min(gw-2,20)), step=Math.max(1,Math.ceil(nd/12));
+    let svg=''; [0,0.5,1].forEach(f=>{ const y=base-ph*f; svg+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#eef2f6"/><text x="${pl-5}" y="${y+3}" text-anchor="end" font-size="10" fill="#7b8794">${Math.round(max*f)}</text>`; });
+    days.forEach((k,i)=>{ const o=dm.get(k)||{}, x=pl+i*gw+(gw-bw)/2; let y=base;
+      names.forEach(nm=>{ const v=o[nm]||0; if(!v) return; const h=v/max*ph; y-=h; svg+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h-1).toFixed(1)}" rx="2" fill="${agColor(nm,AG.sellers.indexOf(nm))}"/>`; });
+      if(i%step===0||i===nd-1) svg+=`<text x="${(pl+i*gw+gw/2).toFixed(1)}" y="${H-7}" text-anchor="middle" font-size="10" fill="#7b8794">${cxDM(k)}</text>`;
+      svg+=`<rect class="hz" data-i="${i}" x="${(pl+i*gw).toFixed(1)}" y="${pt}" width="${gw.toFixed(1)}" height="${ph}" fill="transparent"/>`; });
+    el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Reuniões agendadas por dia, por vendedora">${svg}</svg>`;
+    attachTip('agDay',ds=>{ const k=days[+ds.i], o=dm.get(k)||{}, tot=Object.values(o).reduce((s,v)=>s+v,0);
+      return `<div class="tt-d">${k.split('-').reverse().join('/')} · ${WD[parseD(k).getDay()]}</div>`+(tot?names.filter(nm=>o[nm]).map(nm=>`<div class="tt-r"><span class="tdot" style="background:${agColor(nm,AG.sellers.indexOf(nm))}"></span>${esc(nm)}<b>${int(o[nm])}</b></div>`).join(''):'<div class="tt-r"><span class="sub">Nenhum agendamento</span></div>')+`<div class="tt-r"><span class="sub">Total do dia: ${int(tot)}</span></div>`; }); }
+  // ---- por campanha (lead -> campanha pelo código da aba Qualificação) ----
+  const camOf=new Map(); (typeof QL_ROWS!=='undefined'?QL_ROWS:[]).forEach(r=>{ if(!camOf.has(r.id)) camOf.set(r.id,r.camp); });
+  const cm=new Map(); let noAttr=0;
+  for(const r of P){ const c=camOf.get(r.id); if(!c){ noAttr++; continue; } let o=cm.get(c); if(!o){ o={camp:c,n:0,won:0,spend:0}; cm.set(c,o); } o.n++; if(r.res===2) o.won++; }
+  for(const g of D.grain){ if(g.date<state.start||g.date>state.end||!g.spend) continue; const o=cm.get(g.campaign); if(o) o.spend+=g.spend; }
+  const cl=[...cm.values()].map(o=>({...o,cpa:o.n&&o.spend?o.spend/o.n:null})).sort((a,b)=>b.n-a.n||(a.cpa||1e12)-(b.cpa||1e12));
+  const cheap=cl.filter(o=>o.n>=3&&o.cpa!=null).sort((a,b)=>a.cpa-b.cpa)[0];
+  document.querySelector('#agCamp thead').innerHTML='<tr><th class="com-name">Campanha</th><th>Agendadas</th><th>Vendas</th><th>Investido</th><th>Custo por agendamento</th></tr>';
+  document.querySelector('#agCamp tbody').innerHTML = cl.length ? cl.slice(0,12).map(o=>`<tr><td class="com-name" title="${esc(o.camp)}">${esc(typeof qlCamp==='function'?qlCamp(o.camp):pretty(o.camp))}${cheap&&cheap.camp===o.camp?' <span class="fast-badge">💎 mais barato</span>':''}</td><td><b>${int(o.n)}</b></td><td>${int(o.won)}</td><td>${o.spend?money(o.spend):'—'}</td><td>${o.cpa!=null?`<b>${money(o.cpa)}</b>`:'—'}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="sub">Sem agendamentos atribuídos a campanha no período.</td></tr>';
+  document.getElementById('agCampNote').innerHTML = `Campanha de origem da lead (pelo cadastro dela na base de leads). Investido = gasto da campanha no período.${noAttr?` ${int(noAttr)} ${noAttr===1?'agendamento sem campanha':'agendamentos sem campanha'} (lead fora da base qualificada) não entra na tabela.`:''}`;
+  // ---- motivos de perda das agendadas ----
+  const wm=new Map(); P.filter(r=>r.res===-1).forEach(r=>{ const w=r.why||'Sem motivo'; wm.set(w,(wm.get(w)||0)+1); });
+  document.getElementById('agWhy').innerHTML = lost ? bars([...wm.entries()].sort((a,b)=>b[1]-a[1]).map(([label,c])=>({label,n:c,pct:c/lost*100})),'var(--red)') : '<div class="sub">Nenhuma reunião do período perdida.</div>';
 }
 
 // ===================== melhores anúncios (period-aware, bem simples p/ o comercial) =====================

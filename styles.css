@@ -762,3 +762,45 @@ ul.quotes li{font-size:13px;color:#33414f;font-style:italic;line-height:1.4}
 @media(max-width:900px){ .ql-two{grid-template-columns:minmax(0,1fr)} .ql-hero{grid-template-columns:minmax(0,1fr);justify-items:center;padding:20px 16px;gap:14px} .ql-h-main{width:100%} .ql-gauge{width:170px;height:170px} .ql-g-c b{font-size:31px} .ql-legnote{margin-left:0} }
 @media(max-width:700px){ .ql-hl{grid-template-columns:minmax(0,1fr)} .ql-row{grid-template-columns:minmax(0,1fr)} .ql-act{grid-template-columns:1fr 1fr} .ql-btn{height:44px} .ql-tools input,.ql-tools select{flex:1 1 100%;max-width:none} #qlSt{width:100%} #qlSt button{flex:1;padding:8px 4px} .ql-tile b{font-size:15.5px} .ql-me{width:100%} .ql-me input{flex:1;width:auto} }
 @media(max-width:420px){ .ql-tiles{grid-template-columns:repeat(2,minmax(0,1fr))} }
+
+/* ===== Reuniões agendadas (aba Comercial) ===== */
+.ag-hero{background:linear-gradient(135deg,#1e1b4b 0%,#3b2a8a 55%,#5b3fd1 100%);color:#fff;border:none}
+.ag-hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.ag-hero-t{font-size:20px;font-weight:800;letter-spacing:-.2px}
+.ag-hero-s{font-size:13.5px;opacity:.88;margin-top:4px;max-width:760px}
+.ag-hero-s b{color:#fde68a}
+.ag-src{font-size:11.5px;background:rgba(255,255,255,.14);border-radius:999px;padding:4px 10px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.ag-src i{width:7px;height:7px;border-radius:50%;background:#4ade80;display:inline-block}
+.ag-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+@media (min-width:1200px){ .ag-kpis{grid-template-columns:repeat(6,1fr)} }
+@media (max-width:560px){ .ag-kpis{grid-template-columns:repeat(2,1fr)} }
+.ag-kpi{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:12px 14px;backdrop-filter:blur(2px)}
+.ag-kpi-i{font-size:18px}
+.ag-kpi-v{font-size:24px;font-weight:800;margin-top:4px;line-height:1.1}
+.ag-kpi-l{font-size:12.5px;font-weight:700;opacity:.95;margin-top:3px}
+.ag-kpi-s{font-size:11px;opacity:.72;margin-top:3px}
+.ag-kpi.k2 .ag-kpi-v,.ag-kpi.k6 .ag-kpi-v{color:#fde68a}
+.ag-kpi.k5 .ag-kpi-v{color:#86efac}
+.ag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+.ag-funnel{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.agf-row{display:grid;grid-template-columns:150px 1fr 120px;gap:10px;align-items:center}
+.agf-l{font-size:12.5px;font-weight:700;color:#334155}
+.agf-bar{background:#f1f5f9;border-radius:9px;height:30px;overflow:hidden}
+.agf-bar span{display:flex;align-items:center;height:100%;border-radius:9px;padding:0 10px;color:#fff;font-size:12.5px;min-width:34px;transition:width .4s}
+.agf-c{font-size:13px;font-weight:700;color:#0f172a}
+.agf-c small{display:block;font-size:10.5px;font-weight:500;color:#7b8794}
+.ag-sellers{display:flex;flex-direction:column;gap:12px;margin-top:10px}
+.ag-seller{display:flex;gap:12px;align-items:center}
+.ag-av{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:17px;flex:0 0 40px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+.ag-sb{flex:1;min-width:0}
+.ag-sn{font-weight:800;font-size:14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ag-track{height:9px;background:#f1f5f9;border-radius:99px;margin:6px 0 4px;overflow:hidden}
+.ag-track span{display:block;height:100%;border-radius:99px}
+.ag-ss{font-size:12px;color:#475569}
+.ag-badge{font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 8px}
+.ag-badge.gold{background:#fef3c7;color:#92400e}.ag-badge.green{background:#dcfce7;color:#166534}.ag-badge.blue{background:#dbeafe;color:#1e40af}
+.ag-legend{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0 4px}
+.ag-lg{font-size:12px;color:#475569;display:inline-flex;align-items:center;gap:5px}
+.ag-lg i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.ag-chart svg{max-width:100%;height:auto}
+@media (max-width:600px){ .agf-row{grid-template-columns:100px 1fr 74px} .ag-hero-t{font-size:17px} .ag-kpi-v{font-size:20px} }
