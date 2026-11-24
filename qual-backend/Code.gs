@@ -17,7 +17,7 @@ var ESPERA_ID = '1dSTS8qnRONQMC-GJQa0znhTJC0gat0MmViZVEWqqMyw';
 var APICE_ID = '1bclGSGY51UvnFwY2zrRgwwrEXJL2Dgu8sb6OStGWNUE', APICE_GID = 1900437058;
 // Leads das páginas novas do site (/cocktail-2/, /cocktail-faturamento/...): planilha pública, só nome + e-mail para a aba de qualificação.
 var PAGINAS_ID = '1JIkigyuhaUZvR0XZA7NIOeb32R79E5KgHXKNZch6jbA', PAGINAS_GID = '1965133706';
-var PUBLIC_LIST = 'https://agenciaup13-max.github.io/cocktail-dash/data-qual.js';
+var PUBLIC_LIST = 'https://scaleagenciaaa.github.io/cocktail-dash/data-qual.js';
 var ID_SALT = 'ccn|';   // igual ao build.ps1 (QualId)
 var HEAD = ['ID', 'Data do lead', 'Nome', 'E-mail', 'Telefone', 'Faturamento', 'Campanha', 'Conjunto', 'Anúncio', 'Status', 'Motivo', 'Marcado por', 'Quando'];
 var COL = { id: 0, status: 9, motivo: 10, quem: 11, quando: 12 };
