@@ -2,11 +2,15 @@ name: Refresh tráfego (3h)
 
 on:
   schedule:
-    - cron: '17 */3 * * *'   # a cada 3 horas (minuto :17 para evitar o pico do topo da hora)
+    - cron: '7,22,37,52 * * * *'   # a cada 15 min (24/11/2026: dash mudou p/ agenciaup13-max; o GitHub agenda sozinho, sem cron-job.org)
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:   # nunca duas atualizacoes ao mesmo tempo (a de tras espera)
+  group: refresh-trafego
+  cancel-in-progress: false
 
 jobs:
   build:
