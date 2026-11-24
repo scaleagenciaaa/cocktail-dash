@@ -405,7 +405,35 @@ foreach($er in $esperaRows){ $esD=[string]$er.d; if($esD -notmatch '^\d{4}-\d{2}
   $esperaById[[string]$er.id]=[pscustomobject]@{campaign=$esC;adset=$esS;ad=$esA;bucket='Outros';date=$esD;fat=(Norm ([string]$er.f));q=$esQ}
   $esperaLeads++; if($esQ){ $esperaQlf++ } }
 Write-Host ("ESPERA: {0} leads da lista de espera ({1} qualif)" -f $esperaLeads,$esperaQlf)
-function LeadDeEsperaPorEmail($em){ if($em -notmatch '@' -or $script:esperaById.Count -eq 0){ return $null }; $k=LeadId $em; if($script:esperaById.ContainsKey($k)){ return $script:esperaById[$k] }; return $null }
+# ---- LEADS DAS PAGINAS NOVAS (/cocktail-2/, /cocktail-faturamento/... desde 16/11/2026) -------------------------
+# Planilha PUBLICA propria do site (nao e o Typeform): ja traz utm_campaign/medium/content. E a pagina "INSTITUCIONAL (COPY 2)"
+# que aparecia com gasto e 0 lead. QUALIFICACAO (regra do cliente, 24/11): faturamento ANUAL acima de R$ 1 milhao = qualificada;
+# "Ate R$ 1 milhao" = desqualificada. 1 lead por e-mail; testes (utm teste / grupocardi) fora.
+$PAGINAS_ID='1JIkigyuhaUZvR0XZA7NIOeb32R79E5KgHXKNZch6jbA'; $PAGINAS_GID='1965133706'
+function IsQualAnual($f){ $t=Deaccent (Norm $f); if($t -eq ''){ return $false }; if($t -match '^ate\b' -or $t -match 'menos'){ return $false }; return $true }
+$paginasById=@{}; $pgLeads=0; $pgQlf=0; $pgDup=0; $pgJaTypeform=0
+try{ $pgCsv=Join-Path $dataDir 'paginas.csv'; Get-SheetExport $PAGINAS_ID $PAGINAS_GID $pgCsv
+  $pgRows=@(Read-Csv $pgCsv); $pgH=$pgRows[0]
+  $PG_EM=HdrIndex $pgH 'email'; $PG_DT=HdrIndex $pgH 'recebido_em'; $PG_FAT=HdrIndex $pgH 'faturamento_anual'
+  $PG_SRC=HdrIndex $pgH 'utm_source'; $PG_C=HdrIndex $pgH 'utm_campaign'; $PG_S=HdrIndex $pgH 'utm_medium'; $PG_A=HdrIndex $pgH 'utm_content'
+  if($PG_EM -lt 0 -or $PG_DT -lt 0 -or $PG_FAT -lt 0){ throw "colunas email/recebido_em/faturamento_anual nao encontradas" }
+  $pgSeen=@{}
+  for($i=1;$i -lt $pgRows.Count;$i++){ $r=$pgRows[$i]; if($r.Count -le $PG_FAT){continue}
+    $em=(Norm $r[$PG_EM]).ToLower(); if($em -notmatch '@' -or $em -match 'grupocardi|cardi\.co|@exemplo\.|^teste'){continue}   # testes internos de quem montou as paginas
+    if((Norm $r[$PG_SRC]) -match '(?i)teste' -or (Norm $r[$PG_C]) -match '^(?i)teste$'){continue}
+    if($pgSeen.ContainsKey($em)){ $pgDup++; continue }; $pgSeen[$em]=1
+    if((Norm $r[$PG_DT]) -notmatch '^(\d{1,2})/(\d{1,2})/(\d{4})'){continue}; $pgD='{0}-{1:d2}-{2:d2}' -f $Matches[3],[int]$Matches[2],[int]$Matches[1]
+    $pgC=CleanUtm $r[$PG_C]; if($pgC -eq ''){$pgC='SEM_UTM'}; $pgS=CleanUtm $r[$PG_S]; if($pgS -eq ''){$pgS='SEM_UTM'}; $pgA=AdCode (CleanUtm $r[$PG_A]); if($pgA -eq ''){$pgA='SEM_UTM'}
+    $pgQ=IsQualAnual $r[$PG_FAT]
+    $o=GetDay $pgD; $o.leads++; if($pgQ){ $o.qlf++ }
+    $og=GetGrain $pgD $pgC $pgS $pgA; $og.leads++; if($pgQ){ $og.qlf++ }
+    if($leadByEmail.ContainsKey($em)){ $pgJaTypeform++ }
+    $paginasById[(LeadId $em)]=[pscustomobject]@{campaign=$pgC;adset=$pgS;ad=$pgA;bucket='Outros';date=$pgD;fat=(Norm $r[$PG_FAT]);q=$pgQ}
+    $pgLeads++; if($pgQ){ $pgQlf++ } } }
+catch{ Write-Host "::warning::PAGINAS: planilha das paginas novas falhou ($($_.Exception.Message)) -> segue sem ela" }
+Write-Host ("PAGINAS: {0} leads das paginas novas ({1} qualif >1mi/ano) | {2} repetidos fora | {3} tambem no Typeform" -f $pgLeads,$pgQlf,$pgDup,$pgJaTypeform)
+function LeadDeEsperaPorEmail($em){ if($em -notmatch '@'){ return $null }; $k=LeadId $em
+  if($script:esperaById.ContainsKey($k)){ return $script:esperaById[$k] }; if($script:paginasById.ContainsKey($k)){ return $script:paginasById[$k] }; return $null }
 
 # buyer objections per purchase day (only matched buyers have a known desafio)
 $objBuyers=@{}
@@ -967,6 +995,7 @@ if($Mode -eq 'all' -or $Mode -eq 'qual'){
   foreach($r in $ffd){ $cq=Norm $r[$FF_CAMP]; if($cq -eq '' -or -not (IsFormsCamp $cq)){continue}; $dq=''; $tq=Norm $r[$FF_DATE]; if($tq -match '(\d{4})-(\d{2})-(\d{2})'){ $dq=$Matches[0].Substring(0,10) }; if($dq -eq ''){continue}
     if(-not (IsQualForms $r[$FF_FAT] $r[$FF_VOCE])){continue}; QlAdd (Norm $r[$FF_EMAIL]).ToLower() $dq $cq (Norm $r[$FF_SET]) (AdCode $r[$FF_AD]) (Norm $r[$FF_FAT]) }
   foreach($esK in $esperaById.Keys){ $esR=$esperaById[$esK]; if(-not $esR.q){continue}; QlAdd '' $esR.date $esR.campaign $esR.adset $esR.ad $esR.fat $esK }   # lista de espera (codigo ja vem pronto do backend)
+  foreach($pgK in $paginasById.Keys){ $pgR=$paginasById[$pgK]; if(-not $pgR.q){continue}; QlAdd '' $pgR.date $pgR.campaign $pgR.adset $pgR.ad $pgR.fat $pgK }   # paginas novas (>1 mi/ano)
   # conferencia: cada celula do grain tem que ter exatamente as mesmas qualificadas que a dash ja soma
   $qlDiff=0; foreach($gk in $grain.Keys){ $qn=0; if($qlPerGrain.ContainsKey($gk)){ $qn=$qlPerGrain[$gk] }; if($grain[$gk].qlf -ne $qn){ $qlDiff++ } }
   if($qlDiff -or $qlNoMail){ Write-Host ("::warning::QUAL: {0} celulas do grain divergem | {1} qualificadas sem e-mail" -f $qlDiff,$qlNoMail) }

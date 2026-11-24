@@ -48,7 +48,7 @@ let state = { start:null, end:null, level:'campaign', sort:{key:'qlf',asc:false}
 const isFormsCamp = c => String(c).split('|').some(s=>s.trim().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()==='forms');
 const FORMS_LD = new Map(); for(const r of D.grain){ if(r.leads && isFormsCamp(r.campaign)) FORMS_LD.set(r.date,(FORMS_LD.get(r.date)||0)+r.leads); }
 function sumDaily(start,end){
-  const o={spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,fleads:0,rok:0,rno:0};   // rok/rno = qualificadas reais confirmadas/reprovadas pelo comercial (qlApply)
+  const o={spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,fleads:0,rok:0,rno:0,ag:0};   // ag = reuniões agendadas (agApply); rok/rno = qualificadas reais confirmadas/reprovadas pelo comercial (qlApply)
   for(const r of D.daily){ if(r.date>=start && r.date<=end){ for(const k in o) o[k]+=r[k]||0; o.fleads+=FORMS_LD.get(r.date)||0; } }
   return o;
 }
@@ -352,8 +352,8 @@ function renderInvest(cur){
 
 // ---- optimization table ----
 const expanded = new Set();
-function nodeM(){ return {spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,fleads:0,rok:0,rno:0}; }
-function addM(o,r){ o.spend+=r.spend;o.impr+=r.impr;o.clicks+=r.clicks;o.lpv+=r.lpv;o.leads+=r.leads;o.qlf+=r.qlf;o.sales+=r.sales;o.revenue+=r.revenue;o.rok+=r.rok||0;o.rno+=r.rno||0;
+function nodeM(){ return {spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,fleads:0,rok:0,rno:0,ag:0}; }
+function addM(o,r){ o.spend+=r.spend;o.impr+=r.impr;o.clicks+=r.clicks;o.lpv+=r.lpv;o.leads+=r.leads;o.qlf+=r.qlf;o.sales+=r.sales;o.revenue+=r.revenue;o.rok+=r.rok||0;o.rno+=r.rno||0;o.ag+=r.ag||0;
   if(r.leads && isFormsCamp(r.campaign)) o.fleads+=r.leads; }
 function buildTree(start,end){
   const camps=new Map();
@@ -394,6 +394,8 @@ function treeRow(node,level,hasKids){
     <td>${int(m.rok)}</td>
     <td>${realPct(m)}</td>
     <td>${realCost(m)}</td>
+    <td>${int(m.ag)}</td>
+    <td>${m.ag>0&&m.spend>0?money(m.spend/m.ag):'—'}</td>
     <td>${m.qlf>0?pct(txv):'—'}</td>
     <td>${int(m.sales)}</td>
     <td>${m.sales>0?money(cac):'—'}</td>
@@ -406,9 +408,49 @@ function cplPill(v,qlf){
   const col = v<=90?'var(--green)':(v<=TARGET_CPL_QLF?'var(--yellow)':'var(--red)');
   return `<span class="pill" style="background:${col}">${money(v)}</span>`;
 }
+// colunas da árvore (mesma ordem do treeRow). b: 'hi' = maior é melhor, 'lo' = menor é melhor.
+// 1º clique ordena do MELHOR para o PIOR, 2º clique inverte; sem valor ("—") fica sempre no fim. Vale para campanha, conjunto e anúncio.
+const TREE_COLS=[
+  {k:'spend',l:'Gasto',b:'hi',v:m=>m.spend},
+  {k:'impr',l:'Impressões',b:'hi',v:m=>m.impr},
+  {k:'cpm',l:'CPM',b:'lo',v:m=>m.impr>0?m.spend/m.impr*1000:null},
+  {k:'ctr',l:'CTR',b:'hi',v:m=>m.impr>0?m.clicks/m.impr*100:null},
+  {k:'clicks',l:'Cliques',b:'hi',v:m=>m.clicks},
+  {k:'cpc',l:'CPC',b:'lo',v:m=>m.clicks>0?m.spend/m.clicks:null},
+  {k:'connect',l:'Connect',b:'hi',v:m=>m.clicks>0?m.lpv/m.clicks*100:null},
+  {k:'lpv',l:'Page Views',b:'hi',v:m=>m.lpv},
+  {k:'convlp',l:'Conv. LP',b:'hi',v:m=>{ const pl=m.leads-m.fleads; return (m.lpv>0&&!(m.fleads>0&&pl<=0))?pl/m.lpv*100:null; }},
+  {k:'leads',l:'Leads',b:'hi',v:m=>m.leads},
+  {k:'cpl',l:'CPL',b:'lo',v:m=>m.leads>0?m.spend/m.leads:null},
+  {k:'txq',l:'% Qualif',b:'hi',v:m=>m.leads>0?m.qlf/m.leads*100:null},
+  {k:'qlf',l:'QLF',b:'hi',v:m=>m.qlf},
+  {k:'cplqlf',l:'CPL QLF',b:'lo',v:m=>m.qlf>0?m.spend/m.qlf:null},
+  {k:'rok',l:'QLF real',b:'hi',v:m=>m.rok,t:'Confirmadas pelo comercial na aba Qualificação Comercial'},
+  {k:'txreal',l:'% real',b:'hi',v:m=>realM(m).rate,t:'Confirmadas ÷ avaliadas pelo comercial'},
+  {k:'cplreal',l:'CPL QLF real',b:'lo',v:m=>realM(m).cost,t:'CPL QLF ÷ taxa real'},
+  {k:'ag',l:'📅 Agendadas',b:'hi',v:m=>m.ag,t:'Reuniões agendadas na Clint, pelo dia do agendamento, na campanha/conjunto/anúncio de origem da lead'},
+  {k:'cpag',l:'Custo/agend.',b:'lo',v:m=>m.ag>0?m.spend/m.ag:null,t:'Gasto ÷ reuniões agendadas'},
+  {k:'txv',l:'Conv. Venda',b:'hi',v:m=>m.qlf>0?m.sales/m.qlf*100:null},
+  {k:'sales',l:'Vendas',b:'hi',v:m=>m.sales},
+  {k:'cac',l:'CAC',b:'lo',v:m=>m.sales>0?m.spend/m.sales:null},
+  {k:'revenue',l:'Receita',b:'hi',v:m=>m.revenue},
+  {k:'roas',l:'ROAS',b:'hi',v:m=>m.spend>0?m.revenue/m.spend:null},
+  {k:'ticket',l:'Ticket',b:'hi',v:m=>m.sales>0?m.revenue/m.sales:null}
+];
+const TREE_SORT={k:'spend',rev:false};
+function treeSort(list){ const col=TREE_COLS.find(c=>c.k===TREE_SORT.k)||TREE_COLS[0];
+  const rows=list.map(n=>{ let v=col.v(n.m); if(typeof v!=='number'||!isFinite(v)) v=null;
+    if(col.b==='lo' && !(n.m.spend>0)) v=null;   // custo sem gasto no período (lead antiga) não é "o mais barato": vai pro fim
+    return {n,v}; });
+  rows.sort((a,b)=>{ if(a.v==null&&b.v==null) return b.n.m.spend-a.n.m.spend; if(a.v==null) return 1; if(b.v==null) return -1;
+    let r=col.b==='hi'?b.v-a.v:a.v-b.v; if(TREE_SORT.rev) r=-r; return r||b.n.m.spend-a.n.m.spend; });
+  return rows.map(x=>x.n); }
 function renderTable(){
-  const tree=buildTree(state.start,state.end);
-  document.querySelector('#optTable thead').innerHTML='<tr><th class="tlabel">Campanha › Conjunto › Anúncio</th><th>Gasto</th><th>Impressões</th><th>CPM</th><th>CTR</th><th>Cliques</th><th>CPC</th><th>Connect</th><th>Page Views</th><th>Conv. LP</th><th>Leads</th><th>CPL</th><th>% Qualif</th><th>QLF</th><th>CPL QLF</th><th title="Confirmadas pelo comercial na aba Qualificação Comercial">QLF real</th><th title="Confirmadas ÷ avaliadas pelo comercial">% real</th><th title="CPL QLF ÷ taxa real">CPL QLF real</th><th>Conv. Venda</th><th>Vendas</th><th>CAC</th><th>Receita</th><th>ROAS</th><th>Ticket</th></tr>';
+  const tree=treeSort(buildTree(state.start,state.end));
+  for(const c of tree){ c.kidsArr=treeSort(c.kidsArr); for(const a of c.kidsArr) a.kidsArr=treeSort(a.kidsArr); }
+  document.querySelector('#optTable thead').innerHTML='<tr><th class="tlabel">Campanha › Conjunto › Anúncio</th>'+TREE_COLS.map(c=>{ const on=TREE_SORT.k===c.k;
+    return `<th class="ov-sort${on?' on':''}" data-col="${c.k}" title="${c.t?esc(c.t)+' · ':''}clique para ordenar do melhor para o pior · de novo para inverter">${c.l}${on?` <span class="ov-arr">${TREE_SORT.rev?'▲':'▼'}</span>`:''}</th>`; }).join('')+'</tr>';
+  document.querySelectorAll('#optTable thead th.ov-sort').forEach(th=>th.onclick=()=>{ const k=th.dataset.col; if(TREE_SORT.k===k) TREE_SORT.rev=!TREE_SORT.rev; else { TREE_SORT.k=k; TREE_SORT.rev=false; } renderTable(); });
   let rows='';
   for(const c of tree){ rows+=treeRow(c,0,c.kidsArr.length>0);
     if(expanded.has(c.key)) for(const a of c.kidsArr){ rows+=treeRow(a,1,a.kidsArr.length>0);
@@ -423,7 +465,7 @@ function renderTable(){
 // (top 8 por verba; com item selecionado no nível, só a linha dele). Linhas: Custo MQL, CPL, MQL, Leads, Vendas ou Investimento.
 const OV = { sel:{camp:null,adset:null,ad:null}, metric:'cplq', sort:{0:{k:'spend',rev:false},1:{k:'spend',rev:false},2:{k:'spend',rev:false}} };
 const OV_PAL=['#0f5ba8','#e9a23b','#2e9e3f','#d4544a','#9b59b6','#4aa3e8','#5b6b7b','#c06d1f'];
-const OV_LM=[{k:'cplq',l:'Custo MQL',cost:true},{k:'cpl',l:'CPL',cost:true},{k:'qlf',l:'MQL'},{k:'txreal',l:'% real',pct:true},{k:'leads',l:'Leads'},{k:'sales',l:'Vendas'},{k:'spend',l:'Investimento',money:true}];
+const OV_LM=[{k:'cplq',l:'Custo MQL',cost:true},{k:'cpl',l:'CPL',cost:true},{k:'qlf',l:'MQL'},{k:'txreal',l:'% real',pct:true},{k:'ag',l:'Agendadas'},{k:'cpag',l:'Custo/agend.',cost:true},{k:'leads',l:'Leads'},{k:'sales',l:'Vendas'},{k:'spend',l:'Investimento',money:true}];
 const crSeg = c => { const p=String(c).split('|').map(s=>s.trim()).filter(Boolean); return p.length?p[p.length-1]:String(c); };
 const crCampLabel = c => { const dt=(String(c).match(/(\d{2})\/(\d{2})\/\d{4}/)||[]); return pretty(crSeg(c))+(dt[1]?` · ${dt[1]}/${dt[2]}`:''); };
 const ovLM = () => OV_LM.find(x=>x.k===OV.metric)||OV_LM[0];
@@ -431,6 +473,7 @@ function ovVal(d,k){ k=k||OV.metric;
   if(k==='cplq') return d.qlf>0?d.spend/d.qlf:null;
   if(k==='cpl') return d.leads>0?d.spend/d.leads:null;
   if(k==='txreal') return realM(d).rate;
+  if(k==='cpag') return (d.ag>0&&d.spend>0)?d.spend/d.ag:null;
   return d[k==='rev'?'revenue':k]; }
 function ovFmt(v,k){ k=k||OV.metric; if(v==null) return '—'; const lm=OV_LM.find(x=>x.k===k);
   if(lm&&lm.pct) return pct(v);
@@ -438,7 +481,7 @@ function ovFmt(v,k){ k=k||OV.metric; if(v==null) return '—'; const lm=OV_LM.fi
 function ovAx(v){ const lm=ovLM(); if(lm.pct) return `${Math.round(v)}%`; return (lm.cost||lm.money) ? (v>=1000?`R$ ${n1(v/1000)}k`:`R$ ${int(v)}`) : n1(v); }
 function ovM(n){ const pl=n.leads-(n.fleads||0); return {
   cpl:n.leads>0?n.spend/n.leads:null, cplq:n.qlf>0?n.spend/n.qlf:null, txq:n.leads>0?n.qlf/n.leads*100:null,
-  txreal:realM(n).rate, cplreal:realM(n).cost,
+  txreal:realM(n).rate, cplreal:realM(n).cost, cpag:(n.ag>0&&n.spend>0)?n.spend/n.ag:null,
   cac:(n.sales>0&&n.spend>0)?n.spend/n.sales:null, roas:n.spend>0?n.revenue/n.spend:null,
   cpm:n.impr>0?n.spend/n.impr*1000:null, ctr:n.impr>0?n.clicks/n.impr*100:null, connect:n.clicks>0?n.lpv/n.clicks*100:null,
   conv:(n.lpv>0 && !(n.fleads>0&&pl<=0))?pl/n.lpv*100:null }; }
@@ -467,6 +510,8 @@ const OV_COLS=[
   {k:'rok',l:'MQL real',b:'hi',v:o=>o.m.rok},
   {k:'txreal',l:'% real',b:'hi',v:(o,x)=>x.txreal},
   {k:'cplreal',l:'Custo MQL real',b:'lo',v:(o,x)=>x.cplreal},
+  {k:'ag',l:'📅 Agendadas',b:'hi',v:o=>o.m.ag},
+  {k:'cpag',l:'Custo/agend.',b:'lo',v:(o,x)=>x.cpag},
   {k:'sales',l:'Vendas',b:'hi',v:o=>o.m.sales},
   {k:'cac',l:'CAC',b:'lo',v:(o,x)=>x.cac},
   {k:'rev',l:'Receita',b:'hi',v:o=>o.m.revenue},
@@ -477,7 +522,9 @@ const OV_COLS=[
   {k:'conv',l:'Conv. pág.',b:'hi',v:(o,x)=>x.conv}
 ];
 function ovSortList(list,level){ const s=OV.sort[level], col=OV_COLS.find(c=>c.k===s.k); if(!col) return list.slice();
-  const rows=list.map(o=>{ let v=col.k==='name'?String(o.name).toLowerCase():col.v(o,ovM(o.m)); if(typeof v==='number'&&!isFinite(v)) v=null; return {o,v}; });
+  const rows=list.map(o=>{ let v=col.k==='name'?String(o.name).toLowerCase():col.v(o,ovM(o.m)); if(typeof v==='number'&&!isFinite(v)) v=null;
+    if(col.b==='lo' && !(o.m.spend>0)) v=null;   // custo sem gasto no período não é "o mais barato": vai pro fim
+    return {o,v}; });
   rows.sort((a,b)=>{ if(a.v==null&&b.v==null) return b.o.m.spend-a.o.m.spend; if(a.v==null) return 1; if(b.v==null) return -1;
     let r = col.k==='name' ? (a.v<b.v?-1:(a.v>b.v?1:0)) : (col.b==='hi' ? b.v-a.v : a.v-b.v); if(s.rev) r=-r; return r || b.o.m.spend-a.o.m.spend; });
   return rows.map(x=>x.o); }
@@ -494,6 +541,7 @@ function ovTable(elId,title,hint,list,level,avg){
       <td>${money(m.spend)}</td><td>${int(m.leads)}</td><td>${x.cpl!=null?money(x.cpl):'—'}</td>
       <td>${int(m.qlf)}</td><td>${ovPill(x.cplq,avg)}</td><td>${x.txq!=null?pct(x.txq):'—'}</td>
       <td>${int(m.rok)}</td><td>${realPct(m)}</td><td>${realCost(m)}</td>
+      <td>${int(m.ag)}</td><td>${x.cpag!=null?money(x.cpag):'—'}</td>
       <td>${int(m.sales)}</td><td>${x.cac!=null?money(x.cac):'—'}</td><td>${money(m.revenue)}</td><td>${x.roas!=null?fmtRoas(x.roas):'—'}</td>
       <td>${x.cpm!=null?money(x.cpm):'—'}</td><td>${x.ctr!=null?pct(x.ctr):'—'}</td><td>${x.connect!=null?pct(x.connect):'—'}</td><td>${x.conv!=null?pct(x.conv):'—'}</td></tr>`; }).join('');
   el.innerHTML=`<div class="ov-th"><b>${title}</b><span>${hint} · ${int(list.length)} ${list.length===1?'item':'itens'}</span></div>
@@ -510,7 +558,7 @@ function ovLines(groups,elId,level){
   else if(level===2&&s.ad!=null) sub=groups.filter(g=>g.camp===s.camp&&g.adset===s.adset&&g.ad===s.ad);
   const top=sub.filter(g=>g.m.spend>0).slice(0,8), solo=top.length===1;
   if(!top.length){ el.innerHTML='<div class="ov-empty">Sem verba no período para traçar as linhas.</div>'; return; }
-  for(const g of top){ const mp=new Map(); for(const r of g.rows){ let d=mp.get(r.date); if(!d){ d={spend:0,leads:0,qlf:0,sales:0,revenue:0,rok:0,rno:0}; mp.set(r.date,d); } d.spend+=r.spend; d.leads+=r.leads; d.qlf+=r.qlf; d.sales+=r.sales; d.revenue+=r.revenue; d.rok+=r.rok||0; d.rno+=r.rno||0; } g.map=mp; }
+  for(const g of top){ const mp=new Map(); for(const r of g.rows){ let d=mp.get(r.date); if(!d){ d={spend:0,leads:0,qlf:0,sales:0,revenue:0,rok:0,rno:0,ag:0}; mp.set(r.date,d); } d.spend+=r.spend; d.leads+=r.leads; d.qlf+=r.qlf; d.sales+=r.sales; d.revenue+=r.revenue; d.rok+=r.rok||0; d.rno+=r.rno||0; d.ag+=r.ag||0; } g.map=mp; }
   const dset=new Set(); top.forEach(g=>{ for(const [dt,d] of g.map) if(d.spend>0) dset.add(dt); });
   if(lm.pct && !top.some(g=>[...g.map.values()].some(d=>ovVal(d)!=null))){ el.innerHTML='<div class="ov-empty">O comercial ainda não avaliou nenhuma lead destes itens no período.</div>'; return; }
   const dates=[...dset].sort(), n=dates.length;
@@ -1836,7 +1884,20 @@ const QCD = window.DASH_CLINT || null, QC = (QCD && QCD.m) || null;
 const qlClint = id => (QC && QC[id]) || null;
 function qlStatus(id){ const c=qlClint(id); if(c) return c[0]; const p=QL.pending.get(id); if(p) return p.s; const m=QL.marks[id]; return m?m[0]:0; }
 function qlReason(id){ const c=qlClint(id); if(c) return c[1]||''; const p=QL.pending.get(id); if(p) return p.r||''; const m=QL.marks[id]; return m?(m[1]||''):''; }
+// Reuniões agendadas (Clint) entram em daily/grain como "ag": no dia do agendamento, na campanha/conjunto/anúncio da lead
+// (achada pelo código na base qualificada). Sem linha de gasto nesse dia, cria uma linha só com o agendamento. Lead fora da
+// base qualificada conta só no total do dia (daily), não na árvore.
+let AG_APPLIED=false;
+function agApply(){ if(AG_APPLIED||!AG) return; AG_APPLIED=true;
+  const info=new Map(); QL_ROWS.forEach(r=>{ if(!info.has(r.id)) info.set(r.id,r); });
+  const gm=new Map(); D.grain.forEach(r=>gm.set(qlKey(r.date,r.campaign,r.adset,r.ad),r));
+  const dm=new Map(); D.daily.forEach(r=>dm.set(r.date,r));
+  for(const a of AG_ROWS){ const d=dm.get(a.d); if(d) d.ag=(d.ag||0)+1;
+    const q=info.get(a.id); if(!q) continue; const k=qlKey(a.d,q.camp,q.adset,q.ad); let g=gm.get(k);
+    if(!g){ g={date:a.d,campaign:q.camp,adset:q.adset,ad:q.ad,spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,ag:0}; D.grain.push(g); gm.set(k,g); }
+    g.ag=(g.ag||0)+1; } }
 function qlApply(){   // soma as marcações em daily/grain: daí em diante sumDaily, árvore e V2 enxergam rok/rno como qualquer outra métrica
+  agApply();
   for(const r of D.grain){ r.rok=0; r.rno=0; } for(const r of D.daily){ r.rok=0; r.rno=0; }
   for(const q of QL_ROWS){ const s=qlStatus(q.id); if(!s) continue; const k=s>0?'rok':'rno'; if(q.g) q.g[k]++; if(q.d) q.d[k]++; } }
 const qlPeriod=()=>QL_ROWS.filter(r=>r.date>=state.start&&r.date<=state.end);

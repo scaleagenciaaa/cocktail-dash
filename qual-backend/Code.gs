@@ -15,6 +15,8 @@ var ESPERA_ID = '1dSTS8qnRONQMC-GJQa0znhTJC0gat0MmViZVEWqqMyw';
 // Planilha de compradoras do Ápice (ficou FECHADA em 23/11/2026). GET ?a=apice devolve só as colunas que a dash usa
 // (situação, data do coquetel, valor, sinal, parcelas); nome e e-mail saem como CÓDIGO (hash), nunca em texto.
 var APICE_ID = '1bclGSGY51UvnFwY2zrRgwwrEXJL2Dgu8sb6OStGWNUE', APICE_GID = 1900437058;
+// Leads das páginas novas do site (/cocktail-2/, /cocktail-faturamento/...): planilha pública, só nome + e-mail para a aba de qualificação.
+var PAGINAS_ID = '1JIkigyuhaUZvR0XZA7NIOeb32R79E5KgHXKNZch6jbA', PAGINAS_GID = '1965133706';
 var PUBLIC_LIST = 'https://scaleagencia.github.io/cocktail-dash/data-qual.js';
 var ID_SALT = 'ccn|';   // igual ao build.ps1 (QualId)
 var HEAD = ['ID', 'Data do lead', 'Nome', 'E-mail', 'Telefone', 'Faturamento', 'Campanha', 'Conjunto', 'Anúncio', 'Status', 'Motivo', 'Marcado por', 'Quando'];
@@ -216,6 +218,14 @@ function leadsMap_(fresh) {
     var id = idOf_(em); if (!want[id] || map[id]) return;
     map[id] = [norm_(F.slot[0] >= 0 ? r[F.slot[0]] : ''), em];
   });
+  try {   // Páginas novas do site (/cocktail-2/ etc., planilha pública desde 16/11/2026): nome e e-mail para a aba de qualificação
+    var Pg = readCols_(PAGINAS_ID, PAGINAS_GID, [/^nome$/i, /^email$/i]);
+    if (Pg.pos[1] >= 0) Pg.rows.forEach(function (r) {
+      var em = norm_(r[Pg.slot[1]]).toLowerCase(); if (em.indexOf('@') < 0) return;
+      var id = idOf_(em); if (!want[id] || map[id]) return;
+      map[id] = [norm_(Pg.slot[0] >= 0 ? r[Pg.slot[0]] : ''), em];
+    });
+  } catch (e) { /* planilha indisponível: segue sem ela */ }
   try {   // Lista de espera Ápice (planilha fechada): nome e e-mail para a aba de qualificação
     esperaLinhas_().forEach(function (r) { if (want[r.id] && !map[r.id]) map[r.id] = [r.nome, r.em]; });
   } catch (e) { /* planilha indisponível: segue sem ela */ }
