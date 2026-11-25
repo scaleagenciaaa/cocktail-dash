@@ -2,7 +2,7 @@ name: Refresh tráfego (3h)
 
 on:
   schedule:
-    - cron: '7,22,37,52 * * * *'   # a cada 15 min (24/11/2026: dash mudou p/ agenciaup13-max; o GitHub agenda sozinho, sem cron-job.org)
+    - cron: '7,37 * * * *'   # 25/11/2026: a cada 30 min (pedido do cliente), minuto proprio
   workflow_dispatch:
 
 permissions:
