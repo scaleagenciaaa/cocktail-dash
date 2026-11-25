@@ -19,7 +19,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",syste
 .updated .auto{margin-top:2px;color:var(--blue2)}
 
 /* controls */
-.controls{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;margin-bottom:14px;align-items:center}
+.controls{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;margin-bottom:14px;align-items:center;position:sticky;top:0;z-index:50;background:rgba(244,247,250,.96);backdrop-filter:blur(6px);padding:8px 10px;margin-left:-10px;margin-right:-10px;border-radius:0 0 10px 10px;box-shadow:0 4px 12px -8px rgba(16,42,67,.35)}
 .presets{display:flex;flex-wrap:wrap;gap:6px}
 .presets button,.custom button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 11px;cursor:pointer;font-size:12.5px;color:var(--ink)}
 .presets button:hover,.custom button:hover{background:#f1f6fb}
