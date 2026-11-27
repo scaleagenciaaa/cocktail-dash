@@ -1678,13 +1678,15 @@ function renderDaily(){
   const rows=seriesDaily(state.start,state.end).slice().reverse().map(d=>({   // mais recente primeiro
     date:d.date, spend:d.spend, leads:d.leads, qlf:d.qlf, sales:d.sales, impr:d.impr, clicks:d.clicks, lpv:d.lpv, rok:d.rok||0, rno:d.rno||0, txr:realM(d).rate,
     cpm:safe(d.spend,d.impr)*1000, cpc:safe(d.spend,d.clicks), connect:safe(d.lpv,d.clicks)*100, convlp:safe(d.leads-(FORMS_LD.get(d.date)||0),d.lpv)*100,
-    cpl:safe(d.spend,d.leads), cplqlf:safe(d.spend,d.qlf), txq:safe(d.qlf,d.leads)*100, ctr:safe(d.clicks,d.impr)*100 }));
+    cpl:safe(d.spend,d.leads), cplqlf:safe(d.spend,d.qlf), txq:safe(d.qlf,d.leads)*100, ctr:safe(d.clicks,d.impr)*100,
+    ag:d.ag||0, cpag:safe(d.spend,d.ag||0), agr:safe(d.ag||0,d.rok||0)*100, vag:safe(d.sales,d.ag||0)*100 }));   // agendamentos (Clint) no dia do agendamento
   const mm=(k,ok)=>{ const a=rows.filter(r=>!ok||ok(r)).map(r=>r[k]); return a.length?[Math.min(...a),Math.max(...a)]:[0,0]; };
   const sp=mm('spend'),cpm=mm('cpm',r=>r.impr>0),cpc=mm('cpc',r=>r.clicks>0),con=mm('connect',r=>r.clicks>0),clp=mm('convlp',r=>r.lpv>0),
-    le=mm('leads'),cpl=mm('cpl',r=>r.leads>0),q=mm('qlf'),tx=mm('txq',r=>r.leads>0),sa=mm('sales'),ctr=mm('ctr',r=>r.impr>0),rq=mm('rok'),rt=mm('txr',r=>r.txr!=null);
+    le=mm('leads'),cpl=mm('cpl',r=>r.leads>0),q=mm('qlf'),tx=mm('txq',r=>r.leads>0),sa=mm('sales'),ctr=mm('ctr',r=>r.impr>0),rq=mm('rok'),rt=mm('txr',r=>r.txr!=null),
+    ag=mm('ag'),cag=mm('cpag',r=>r.ag>0&&r.spend>0),agr=mm('agr',r=>r.rok>0),vag=mm('vag',r=>r.ag>0);
   const cell=(ok,v,rng,mode,fmt)=>ok?`<td style="${heat(v,rng[0],rng[1],mode)}">${fmt(v)}</td>`:'<td>—</td>';
   document.querySelector('#dailyTable thead').innerHTML=
-    '<tr><th>Dia</th><th>Investimento</th><th>CPM</th><th>CPC</th><th>Connect Rate</th><th>Conv. de página</th><th>Leads</th><th>CPL</th><th>QLF</th><th>CPL QLF</th><th>% QLF</th><th title="Confirmadas pelo comercial na aba Qualificação Comercial">QLF real</th><th title="Confirmadas ÷ avaliadas pelo comercial">% real</th><th>Vendas</th><th>CTR</th></tr>';
+    '<tr><th>Dia</th><th>Investimento</th><th>CPM</th><th>CPC</th><th>Connect Rate</th><th>Conv. de página</th><th>Leads</th><th>CPL</th><th>QLF</th><th>CPL QLF</th><th>% QLF</th><th title="Confirmadas pelo comercial na aba Qualificação Comercial">QLF real</th><th title="Confirmadas ÷ avaliadas pelo comercial">% real</th><th title="Reuniões agendadas na Clint (dia do agendamento)">Agendamentos</th><th title="Investimento do dia ÷ agendamentos do dia">Custo/agend.</th><th title="Agendamentos ÷ MQL real do dia">% agend. s/ MQL real</th><th title="Vendas ÷ agendamentos do dia">Venda s/ agend.</th><th>Vendas</th><th>CTR</th></tr>';
   document.querySelector('#dailyTable tbody').innerHTML = rows.length ? rows.map(r=>`<tr>
     <td>${r.date.slice(8,10)}/${r.date.slice(5,7)}</td>
     <td style="${heat(r.spend,sp[0],sp[1],'vol')}">${money(r.spend)}</td>
@@ -1699,9 +1701,13 @@ function renderDaily(){
     ${cell(r.leads>0,r.txq,tx,'good',pct)}
     <td style="${heat(r.rok,rq[0],rq[1],'vol')}">${int(r.rok)}</td>
     ${cell(r.txr!=null,r.txr,rt,'good',pct)}
+    <td style="${heat(r.ag,ag[0],ag[1],'vol')}">${int(r.ag)}</td>
+    ${cell(r.ag>0&&r.spend>0,r.cpag,cag,'cost',money)}
+    ${cell(r.rok>0,r.agr,agr,'good',pct)}
+    ${cell(r.ag>0,r.vag,vag,'good',pct)}
     <td style="${heat(r.sales,sa[0],sa[1],'vol')}">${int(r.sales)}</td>
     ${cell(r.impr>0,r.ctr,ctr,'good',pct)}</tr>`).join('')
-    : '<tr><td colspan="15" class="sub">Sem dados no período.</td></tr>';
+    : '<tr><td colspan="19" class="sub">Sem dados no período.</td></tr>';
 }
 
 // ===================== estudo das compradoras (3 abas) =====================
